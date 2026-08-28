@@ -1,0 +1,3 @@
+ipystream==0.1.39
+cryptography==44.0.1
+ipyleaflet==0.20.0

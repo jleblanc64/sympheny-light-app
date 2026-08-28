@@ -1,0 +1,8 @@
+jupyter.ipynb
+kernel_to_token.json
+kernel_to_user.json
+kernel.lock
+logs.txt
+__pycache__/
+venv
+.idea/
