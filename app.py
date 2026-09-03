@@ -13,4 +13,4 @@ if not is_sagemaker():
     jwt = get_jwt(username, password, base_url)
     print(f"APP: http://localhost:{port}?{PARAM_KEY_TOKEN}={jwt}")
 
-ipystream.run(enforce_PARAM_KEY_TOKEN=True, token_to_user_fun=token_to_user, show_logo=False, show_app_url=False, port=port)
+ipystream.run(enforce_PARAM_KEY_TOKEN=True, token_to_user_fun=token_to_user, show_logo=False, show_app_url=False, port=port, disable_extensions=True)
