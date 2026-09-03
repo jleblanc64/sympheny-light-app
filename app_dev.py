@@ -14,4 +14,4 @@ os.environ[OS_JWT_OVERRIDE] = r.post(f"{base_url}backoffice/auth/ext/token",
                                      json={"email": username, "password": password}).json()["access_token"]
 
 subprocess.run(f"ps -eo pid,args | grep '[p]ython app.py' | awk '$1 != {os.getpid()} {{print $1}}' | xargs -r kill -9", shell=True)
-ipystream.run(use_xpython=False, show_logo=False)
+ipystream.run(use_xpython=False, show_logo=False, disable_extensions=True)
