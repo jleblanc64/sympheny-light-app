@@ -17,4 +17,6 @@ os.environ[OS_JWT_OVERRIDE] = r.post(f"{base_url}backoffice/auth/ext/token",
 
 subprocess.run(f"ps -eo pid,args | grep -E '[p]ython3? app.py' | awk '$1 != {os.getpid()} {{print $1}}' | xargs -r kill -9", shell=True)
 subprocess.run(f"ps -eo pid,args | grep -E '[p]ython3? app_dev.py' | awk '$1 != {os.getpid()} {{print $1}}' | xargs -r kill -9", shell=True)
+subprocess.run(f"ps -eo pid,args | grep -E '[p]ython3? -u app.py' | awk '$1 != {os.getpid()} {{print $1}}' | xargs -r kill -9", shell=True)
+subprocess.run(f"ps -eo pid,args | grep -E '[p]ython3? -u app_dev.py' | awk '$1 != {os.getpid()} {{print $1}}' | xargs -r kill -9", shell=True)
 ipystream.run(use_xpython=False, show_logo=False, port=port, disable_extensions=True)
