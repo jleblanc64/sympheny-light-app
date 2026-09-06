@@ -1,18 +1,15 @@
-"""Four-step configuration wizard.
+"""Four-step configuration wizard (Voila / ipywidgets).
 
-Step 1 Site location    : ipyleaflet map; draw a polygon over the building
-                          cluster, then "Load GIS data" fetches real footprints
-                          plus a site solar profile.
-Step 2 Site & buildings : building-type list + form, KPIs and aggregated
-                          totals. Demand comes from the Sympheny API
-                          (use -> building_type, GFA -> building_ground_area);
-                          all building x carrier calls run in one batch.
-Step 3 System variants  : side-by-side variants, each a set of technologies.
-Step 4 Summary          : read-only recap; Submit creates one Sympheny scenario
-                          per variant (hub, stage, technology package, then the
-                          aggregated 8760 h demands on the carriers the
-                          technologies brought in), solves the first one and
-                          prints its dashboard URL.
+1 Site location    : draw a polygon on an ipyleaflet map; "Load GIS data" fetches
+                     real footprints plus a site solar profile.
+2 Site & buildings : building-type list + form, KPIs, aggregated totals. Demand
+                     comes from the Sympheny API (use -> building_type,
+                     GFA -> building_ground_area); all building x carrier calls
+                     run in one batch.
+3 System variants  : side-by-side variants, each a set of technologies.
+4 Summary          : read-only recap; Submit creates one Sympheny scenario per
+                     variant (hub, stage, technology package, aggregated 8760 h
+                     demands), solves the first one and prints its dashboard URL.
 
 UI first, then every backend call under the "## BACKEND API CALLS" banner.
 """
@@ -35,19 +32,15 @@ from ipystream.voila.utils_browser_ready import on_browser_ready
 from utils_login import get_creds_from_token
 
 CONTENT_MIN_PX = 560
-CHART_PREVIEW_PX, CHART_PREVIEW_W = 120, 470
-CHART_COMBINED_PX = 150
-CHART_SOLAR_PX = 175
-STEP_DEFS = [("1", "Site location"), ("2", "Site & buildings"),
-             ("3", "System variants"), ("4", "Summary")]
+CHART_PREVIEW_PX, CHART_PREVIEW_W, CHART_COMBINED_PX, CHART_SOLAR_PX = 120, 470, 150, 175
+STEP_DEFS = [("1", "Site location"), ("2", "Site & buildings"), ("3", "System variants"), ("4", "Summary")]
 TEAL, INK, MUTED, LINE = "#0f9d8f", "#1f2933", "#8a94a0", "#e3e8ee"
 
-# Displayed once by run(); every class below is global to the page.
+# Displayed once by run(). Voila ships `label,div,span,p,li,th,td,pre{color:black!important}`,
+# so every colour carries !important. The .widget-*/button rules fight ipywidgets' stylesheet.
 WZ_CSS = """
 <style>
 :root{--teal:#0f9d8f;--ink:#1f2933;--muted:#8a94a0;--line:#e3e8ee;--deep:#0b5f57}
-/* Voila ships `label,div,span,p,li,th,td,pre{color:black!important}` — every
-   colour here carries !important to win it back. Declare each one once. */
 .wz-nav{background:#1b2534 !important;border-radius:10px;padding:0 14px;height:56px;display:flex;align-items:center;gap:4px;font-family:sans-serif;margin:0 0 14px}
 .wz-nav *{font-family:sans-serif}
 .wz-nav .crumb{display:flex;align-items:center;gap:9px;padding:7px 14px;font-size:14px;border-radius:20px;color:#dbe3ec !important}
@@ -58,14 +51,12 @@ WZ_CSS = """
 .wz-nav .crumb.active .dot{background:var(--teal);box-shadow:0 0 0 3px #0f9d8f55}
 .wz-nav .crumb.done .dot{background:var(--teal)}
 .wz-nav .sep{color:#9aa7b8 !important;font-size:13px;padding:0 2px}
-
 .wz-title{font-size:15px;font-weight:600;color:var(--ink) !important;margin:0 0 8px;font-family:sans-serif}
 .wz-caption,.wz-sub,.wz-cat,.wz-kpi .sub,.wz-sum td.k{color:var(--muted) !important}
 .wz-caption{font-size:11px;margin:1px 0 6px 2px;font-family:sans-serif}
 .wz-sub{font-size:11px;margin:-6px 0 5px 26px;font-family:sans-serif}
 .wz-cat{font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin:9px 0 3px;font-family:monospace}
 .wz-label{font-size:11px;color:#4a5568 !important;margin:0 0 3px 2px;font-family:sans-serif}
-
 .wz-kpi,.wz-side,.wz-sum,.wz-loader,.wz-err{border:1px solid var(--line);border-radius:10px;background:#fff}
 .wz-kpi{padding:8px 14px;min-width:118px;font-family:monospace}
 .wz-kpi .lab{font-size:10px;letter-spacing:.08em;text-transform:uppercase}
@@ -90,13 +81,10 @@ WZ_CSS = """
 .wz-tag.err{background:#fdecec;color:#b3312c !important;border:1px solid #f4c9c7}
 .wz-tech-name{font-size:13px;font-weight:600;color:var(--ink) !important;font-family:sans-serif;line-height:1.25}
 .wz-tech-sub{font-size:11px;color:var(--muted) !important;font-family:sans-serif}
-
 @keyframes wz-spin{to{transform:rotate(360deg)}}
 .wz-loader{display:flex;align-items:center;justify-content:center;gap:10px;border-style:dashed;background:#fcfdfe;font-family:sans-serif;font-size:11px;color:var(--muted) !important}
 .wz-loader .ring{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--teal);animation:wz-spin .8s linear infinite;flex:0 0 20px}
 .wz-err{border-color:#f4c9c7;background:#fdecec;padding:8px 12px;font-family:monospace;font-size:11px;color:#b3312c !important;margin:4px 0}
-
-/* these fight ipywidgets' own stylesheet, not Voila's colour rule */
 .widget-text input[type="text"],.widget-text input[type="number"],.widget-dropdown > select{border:1px solid #d7dde5 !important;border-radius:8px !important;height:32px !important;padding:2px 10px !important;font-size:13px !important;color:var(--ink) !important;background:#fff !important;box-shadow:none !important}
 .widget-text input:focus,.widget-dropdown > select:focus{border-color:var(--teal) !important;outline:none !important;box-shadow:0 0 0 2px #0f9d8f22 !important}
 button.jupyter-button{border-radius:8px !important;box-shadow:none !important;font-family:sans-serif !important;font-size:13px !important;border:1px solid #d7dde5 !important}
@@ -122,32 +110,24 @@ button.jupyter-button.wz-x:hover{background:#f2f4f7 !important;color:#e0524d !im
 CARRIERS = [("Heat", "#e0524d"), ("Elec", "#1fab8c"), ("DHW", "#f2a93b")]
 CARRIER_COLOR = dict(CARRIERS)
 SOLAR_COLOR, SOLAR_COLOR_LINE = "#f5a623", "#d98d12"
-
-USE_TYPES = ["RESIDENCE_MFH", "RESIDENCE_SFH", "ADMINISTRATION", "OFFICES",
-             "SCHOOLS", "RETAIL", "RESTAURANT", "ASSEMBLY", "HOSPITALS",
-             "INDUSTRY", "WAREHOUSE", "SPORTS_CENTER", "INDOOR_POOL", "HOTEL"]
+USE_TYPES = ["RESIDENCE_MFH", "RESIDENCE_SFH", "ADMINISTRATION", "OFFICES", "SCHOOLS", "RETAIL", "RESTAURANT",
+             "ASSEMBLY", "HOSPITALS", "INDUSTRY", "WAREHOUSE", "SPORTS_CENTER", "INDOOR_POOL", "HOTEL"]
 PERIODS = ["< 1950", "1950–1970", "1970–1990", "1990–2000", "2000–2010", "> 2010"]
-CLIMATE_ZONES = ["Zürich, CH", "Genève, CH", "Basel, CH", "Lugano, CH",
-                 "Lyon, FR", "Milano, IT", "München, DE"]
+CLIMATE_ZONES = ["Zürich, CH", "Genève, CH", "Basel, CH", "Lugano, CH", "Lyon, FR", "Milano, IT", "München, DE"]
 # EPC class is descriptive metadata only — the demand comes from the API.
-EPC_COLOR = {"A": "#2e9e4f", "B": "#6cb33f", "C": "#b7cf2b", "D": "#ef7215",
-             "E": "#e8546a", "F": "#b45ad0", "G": "#8a94a0"}
+EPC_COLOR = {"A": "#2e9e4f", "B": "#6cb33f", "C": "#b7cf2b", "D": "#ef7215", "E": "#e8546a", "F": "#b45ad0", "G": "#8a94a0"}
 DEFAULT_BUILDINGS = [
     {"name": "Residential MFH", "use": "RESIDENCE_MFH", "period": "1990–2000", "renovated": "No", "gfa": 23460.0, "zone": "Zürich, CH", "diversity": 8.0, "epc": "D"},
     {"name": "Offices", "use": "OFFICES", "period": "2000–2010", "renovated": "Yes", "gfa": 4800.0, "zone": "Zürich, CH", "diversity": 12.0, "epc": "C"},
     {"name": "Retail", "use": "RETAIL", "period": "1970–1990", "renovated": "No", "gfa": 1200.0, "zone": "Zürich, CH", "diversity": 15.0, "epc": "E"},
 ]
 TECH_CATALOG = {
-    "Heat supply": [
-        ("Gas boiler", "η 92% · gas import · CH grid tariff", "🔥"),
-        ("Air-source heat pump", "COP 3.0 · elec import", "💧"),
-        ("Ground-source HP", "COP 4.5 · borehole", "🌡️"),
-        ("Wood pellet boiler", "η 88% · pellet price CH", "🪵"),
-    ],
-    "Electricity & renewables": [
-        ("Solar PV", "Roof area from GIS", "☀️"),
-        ("CHP unit", "Gas engine · heat-led", "⚙️"),
-    ],
+    "Heat supply": [("Gas boiler", "η 92% · gas import · CH grid tariff", "🔥"),
+                    ("Air-source heat pump", "COP 3.0 · elec import", "💧"),
+                    ("Ground-source HP", "COP 4.5 · borehole", "🌡️"),
+                    ("Wood pellet boiler", "η 88% · pellet price CH", "🪵")],
+    "Electricity & renewables": [("Solar PV", "Roof area from GIS", "☀️"),
+                                 ("CHP unit", "Gas engine · heat-led", "⚙️")],
 }
 TECH_INDEX = {n: (c, s, i) for c, items in TECH_CATALOG.items() for n, s, i in items}
 VARIANT_COLORS = [TEAL, "#1a6fc4", "#e0952b", "#9c1a6f", "#5a4fcf"]
@@ -156,56 +136,65 @@ DEFAULT_VARIANTS = [
     {"name": "Status quo / Gas boiler", "techs": ["Gas boiler"]},
     {"name": "District heating + PV", "techs": ["Solar PV"]},
 ]
-
-# Default site outline, pre-drawn on load. Given as [lat, lon]; stored and
-# consumed everywhere else as [lon, lat] (GeoJSON order).
+# Default site outline, given as [lat, lon]; stored and consumed as [lon, lat] (GeoJSON order).
 _DEFAULT_LATLON = [[46.238324, 6.206312], [46.238034, 6.206817], [46.238348, 6.20709],
                    [46.238604, 6.20665], [46.238324, 6.206312]]
 DEFAULT_POLYGON = [[lon, lat] for lat, lon in _DEFAULT_LATLON]
-DEFAULT_MAP_CENTER = (sum(p[0] for p in _DEFAULT_LATLON) / len(_DEFAULT_LATLON),
-                      sum(p[1] for p in _DEFAULT_LATLON) / len(_DEFAULT_LATLON))
+DEFAULT_MAP_CENTER = tuple(sum(p[i] for p in _DEFAULT_LATLON) / len(_DEFAULT_LATLON) for i in (0, 1))
 
 
 # ----------------------------------------------------------------- UI pieces
+def _btn(desc, *cls, w=None, h="34px", tip="", m=None):
+    b = widgets.Button(description=desc, tooltip=tip, layout=widgets.Layout(width=w, height=h, margin=m))
+    for c in cls:
+        b.add_class(c)
+    return b
+
+
+def _vcolor(vi):
+    return VARIANT_COLORS[vi % len(VARIANT_COLORS)]
+
+
+def _closed(ring):
+    """GeoJSON polygons must be closed."""
+    ring = list(ring)
+    return ring if ring[0] == ring[-1] else ring + [ring[0]]
+
+
+def _w(width):
+    return f"width:{width}px;" if width else "width:100%;"
+
+
 def _loader(label, height, width=None):
-    w = f"width:{width}px;" if width else "width:100%;"
-    return HTML(f"<div class='wz-loader' style='{w}height:{height}px'>"
+    return HTML(f"<div class='wz-loader' style='{_w(width)}height:{height}px'>"
                 f"<div class='ring'></div><span>{label}</span></div>")
 
 
 def _error_box(msg, height, width=None):
-    w = f"width:{width}px;" if width else "width:100%;"
-    return HTML(f"<div class='wz-err' style='{w}min-height:{height}px;"
-                f"display:flex;align-items:center'>⚠ {msg}</div>")
+    return HTML(f"<div class='wz-err' style='{_w(width)}min-height:{height}px;display:flex;align-items:center'>⚠ {msg}</div>")
 
 
 def _loading_html(label="Loading…", big=False):
     box = "width:420px;height:88px;gap:16px" if big else "width:260px;height:64px"
     ring = " style='width:32px;height:32px;border-width:3.5px;flex:0 0 32px'" if big else ""
-    txt = (f" style='font-size:15px;font-weight:700;letter-spacing:.04em;"
-           f"color:{INK} !important'") if big else ""
-    return HTML(f"<div style='min-height:{CONTENT_MIN_PX}px;display:flex;"
-                f"align-items:center;justify-content:center'>"
+    txt = f" style='font-size:15px;font-weight:700;letter-spacing:.04em;color:{INK} !important'" if big else ""
+    return HTML(f"<div style='min-height:{CONTENT_MIN_PX}px;display:flex;align-items:center;justify-content:center'>"
                 f"<div class='wz-loader' style='border:none;background:transparent;{box}'>"
                 f"<div class='ring'{ring}></div><span{txt}>{label}</span></div></div>")
 
 
 def _kpi(label, value, sub, color):
-    return (f"<div class='wz-kpi'><div class='lab' style='color:{color} !important'>"
-            f"{label}</div><div class='val'>{value}</div>"
-            f"<div class='sub'>{sub}</div></div>")
+    return (f"<div class='wz-kpi'><div class='lab' style='color:{color} !important'>{label}</div>"
+            f"<div class='val'>{value}</div><div class='sub'>{sub}</div></div>")
 
 
 def _render_nav_html(active):
     parts = []
     for i, (num, label) in enumerate(STEP_DEFS):
         cls = "active" if i == active else ("done" if i < active else "")
-        mark = "\u2713" if i < active else num
-        parts.append(f"<div class='crumb {cls}'><div class='dot'>{mark}</div>"
-                     f"<span>{label}</span></div>")
-        if i < len(STEP_DEFS) - 1:
-            parts.append("<div class='sep'>\u25b8</div>")
-    return f"<div class='wz-nav'>{''.join(parts)}</div>"
+        parts.append(f"<div class='crumb {cls}'><div class='dot'>{'✓' if i < active else num}</div><span>{label}</span></div>")
+    sep = "<div class='sep'>▸</div>"
+    return f"<div class='wz-nav'>{sep.join(parts)}</div>"
 
 
 def _profile_fig(curves, title, height, width=None):
@@ -214,16 +203,12 @@ def _profile_fig(curves, title, height, width=None):
     for name, color in CARRIERS:
         y = curves.get(name) or []
         if y and max(y) > 0:
-            fig.add_trace(go.Bar(
-                x=list(range(24)), y=[round(v, 2) for v in y], name=name,
-                marker_color=color,
-                hovertemplate=f"{name} · %{{x}}h · %{{y}} kW<extra></extra>"))
+            fig.add_trace(go.Bar(x=list(range(24)), y=[round(v, 2) for v in y], name=name, marker_color=color,
+                                 hovertemplate=f"{name} · %{{x}}h · %{{y}} kW<extra></extra>"))
     fig.update_layout(
         title=dict(text=title, font=dict(size=11), x=0, y=0.97) if title else None,
-        barmode="group", height=height, width=width,
-        margin=dict(l=40, r=8, t=26 if title else 8, b=8),
-        legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="left",
-                    x=0.34, font=dict(size=10)),
+        barmode="group", height=height, width=width, margin=dict(l=40, r=8, t=26 if title else 8, b=8),
+        legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="left", x=0.34, font=dict(size=10)),
         xaxis=dict(showticklabels=False, title="", showgrid=False),
         yaxis=dict(title="", showgrid=False, ticksuffix=" kW", tickfont=dict(size=9)),
         plot_bgcolor="white", paper_bgcolor="white", bargap=0.15, bargroupgap=0.05)
@@ -232,54 +217,39 @@ def _profile_fig(curves, title, height, width=None):
 
 def _solar_fig(avg24, height):
     """`avg24` is the site-total solar profile collapsed to 24 hourly values."""
-    fig = go.Figure(go.Bar(
-        x=list(range(24)), y=[round(v, 3) for v in avg24], name="Solar",
-        marker=dict(color=SOLAR_COLOR, line=dict(color=SOLAR_COLOR_LINE, width=0.6)),
-        hovertemplate="%{x}:00 · %{y}<extra></extra>"))
-    # Plotly sizes the title box from font.size, so a <span> LARGER than the
-    # base font gets clipped: the sun rides the base size and the text is
-    # shrunk with spans instead. "☀" (U+2600), not the emoji — without the
-    # variation selector the span's colour applies instead of a colour glyph.
+    fig = go.Figure(go.Bar(x=list(range(24)), y=[round(v, 3) for v in avg24], name="Solar",
+                           marker=dict(color=SOLAR_COLOR, line=dict(color=SOLAR_COLOR_LINE, width=0.6)),
+                           hovertemplate="%{x}:00 · %{y}<extra></extra>"))
+    # Plotly sizes the title box from font.size, so spans LARGER than it get clipped: the sun
+    # rides the base size and the text is shrunk. "☀" (U+2600), not the emoji, so the span colour applies.
     fig.update_layout(
         title=dict(text=(f"<span style='color:{SOLAR_COLOR}'>☀</span>"
-                         f"<span style='font-size:17px;color:{INK}'>"
-                         f"  Solar profile — site total</span>"
-                         f"<span style='color:{MUTED};font-weight:400;font-size:13px'>"
-                         f"  daily avg of 8760 h</span>"),
+                         f"<span style='font-size:17px;color:{INK}'>  Solar profile — site total</span>"
+                         f"<span style='color:{MUTED};font-weight:400;font-size:13px'>  daily avg of 8760 h</span>"),
                    font=dict(size=30, color=INK), x=0, xanchor="left", y=0.97),
         height=height, showlegend=False, margin=dict(l=42, r=10, t=52, b=32),
-        xaxis=dict(tickmode="array", tickvals=[0, 4, 8, 12, 16, 20],
-                   ticktext=["0h", "4h", "8h", "12h", "16h", "20h"], showgrid=False,
-                   tickfont=dict(size=10, color=MUTED),
+        xaxis=dict(tickmode="array", tickvals=[0, 4, 8, 12, 16, 20], ticktext=["0h", "4h", "8h", "12h", "16h", "20h"],
+                   showgrid=False, tickfont=dict(size=10, color=MUTED),
                    title=dict(text="Hour of day", font=dict(size=10, color=MUTED))),
-        yaxis=dict(title="", showgrid=True, gridcolor=LINE, gridwidth=1,
-                   zeroline=False, tickfont=dict(size=9, color=MUTED)),
+        yaxis=dict(title="", showgrid=True, gridcolor=LINE, gridwidth=1, zeroline=False, tickfont=dict(size=9, color=MUTED)),
         plot_bgcolor="white", paper_bgcolor="white", bargap=0.25)
     return fig
 
 
 # ------------------------------------------------------- step 1: site location
 def _build_step_location(site, vbox, spinner_html, on_gis_loaded=None):
-    """Draw-a-polygon map. Mutates site["polygon"] ([lon, lat] pairs) as the
-    user draws, and site["gis"] / ["gis_scenario_guid"] / ["solar_series"] /
-    ["solar_area"] once "Load GIS data" runs — step 4 reuses all four.
-
-    `vbox` / `spinner_html` are the shell's shared Spinned() area, so the GIS
-    fetch gets the same in-place progress treatment as Submit. `on_gis_loaded`
-    lets the shell invalidate step 2 so it rebuilds from the new addresses.
-    """
+    """Draw-a-polygon map. Mutates site["polygon"] ([lon, lat] pairs) as the user draws, and
+    site["gis"] / ["gis_scenario_guid"] / ["solar_series"] / ["solar_area"] once "Load GIS data"
+    runs — step 4 reuses all four. `vbox`/`spinner_html` are the shell's shared Spinned() area;
+    `on_gis_loaded` lets the shell rebuild step 2 from the new addresses."""
     layers = {"site": None, "gis": None}
-    m = Map(center=DEFAULT_MAP_CENTER, zoom=18, basemap=basemaps.OpenStreetMap.Mapnik,
-            layout=widgets.Layout(width="100%", height="480px",
-                                  border=f"1px solid {LINE}"),
-            scroll_wheel_zoom=True)
+    m = Map(center=DEFAULT_MAP_CENTER, zoom=18, basemap=basemaps.OpenStreetMap.Mapnik, scroll_wheel_zoom=True,
+            layout=widgets.Layout(width="100%", height="480px", border=f"1px solid {LINE}"))
     solar_box = widgets.VBox()
 
     def _set_layer(key, layer):
-        """Swap one of our own map layers. The draw control's rendering of a
-        finished shape lives on the frontend and can't be re-driven from
-        Python once the map is on screen, so the outline is a plain layer too
-        — exactly one of each is ever visible."""
+        # The draw control's finished shape lives on the frontend and can't be re-driven from
+        # Python, so the outline is a plain layer too — exactly one of each is ever visible.
         if layers[key] is not None:
             try:
                 m.remove_layer(layers[key])
@@ -292,25 +262,18 @@ def _build_step_location(site, vbox, spinner_html, on_gis_loaded=None):
     def _show_polygon(coords):
         if not coords:
             return _set_layer("site", None)
-        ring = list(coords)
-        if ring[0] != ring[-1]:
-            ring = ring + [ring[0]]          # GeoJSON polygons must be closed
         _set_layer("site", GeoJSON(
-            data={"type": "Feature", "properties": {},
-                  "geometry": {"type": "Polygon", "coordinates": [ring]}},
+            data={"type": "Feature", "properties": {}, "geometry": {"type": "Polygon", "coordinates": [_closed(coords)]}},
             style={"color": TEAL, "weight": 2, "fillColor": TEAL, "fillOpacity": .25}))
 
     def _clear_gis():
         """Outline changed: buildings and solar from the old polygon are stale."""
         _set_layer("gis", None)
-        site.update(gis=None, gis_scenario_guid=None,
-                    solar_series=None, solar_area=None)
+        site.update(gis=None, gis_scenario_guid=None, solar_series=None, solar_area=None)
         solar_box.children = []
 
-    draw = DrawControl(polygon={"shapeOptions": {"color": TEAL, "fillColor": TEAL,
-                                                 "fillOpacity": 0.25}},
-                       polyline={}, circlemarker={}, rectangle={}, circle={},
-                       marker={}, edit=True, remove=True)
+    draw = DrawControl(polygon={"shapeOptions": {"color": TEAL, "fillColor": TEAL, "fillOpacity": 0.25}},
+                       polyline={}, circlemarker={}, rectangle={}, circle={}, marker={}, edit=True, remove=True)
     m.add_control(draw)
 
     def _on_draw(_target, action, geo_json):
@@ -331,9 +294,7 @@ def _build_step_location(site, vbox, spinner_html, on_gis_loaded=None):
     _show_polygon(site["polygon"])
 
     def _center(_b=None):
-        # Sets center/zoom directly: fit_bounds needs the container's pixel
-        # size, which the frontend often doesn't know yet under Voila, so it
-        # silently does nothing. Traitlet assignment always takes effect.
+        # fit_bounds needs the container's pixel size, which Voila often doesn't know yet; traitlets always work.
         poly = site.get("polygon")
         if poly:
             lons, lats = [p[0] for p in poly], [p[1] for p in poly]
@@ -350,237 +311,149 @@ def _build_step_location(site, vbox, spinner_html, on_gis_loaded=None):
             return out.print(f"✗ {type(exc).__name__}: {exc}")
         site["gis"], site["gis_scenario_guid"] = data, scenario_guid
         features = (data.get("building_layer") or {}).get("features", [])
-        _set_layer("gis", GeoJSON(
-            data={"type": "FeatureCollection", "features": features},
-            style={"color": "#1a6fc4", "weight": 1, "fillColor": "#1a6fc4",
-                   "fillOpacity": 0.35},
-            hover_style={"fillOpacity": 0.65}) if features else None)
+        _set_layer("gis", GeoJSON(data={"type": "FeatureCollection", "features": features},
+                                  style={"color": "#1a6fc4", "weight": 1, "fillColor": "#1a6fc4", "fillOpacity": 0.35},
+                                  hover_style={"fillOpacity": 0.65}) if features else None)
 
         solar_box.children = [_loader("Fetching solar profile…", CHART_SOLAR_PX)]
         lonlat, area = _gis_first_building_lonlat(data), _gis_total_area(data)
         site["solar_series"] = site["solar_area"] = None
         if not lonlat or area <= 0:
-            solar_box.children = [_error_box(
-                "no building footprint/area available for a solar lookup.",
-                CHART_SOLAR_PX)]
+            solar_box.children = [_error_box("no building footprint/area available for a solar lookup.", CHART_SOLAR_PX)]
         else:
-            try:
-                # Kept on `site` so a Solar-PV variant reuses this exact
-                # profile in step 4 instead of re-fetching it.
+            try:  # kept on `site` so a Solar-PV variant reuses this exact profile in step 4
                 series = _fetch_solar_profile(*lonlat, area)
                 site["solar_series"], site["solar_area"] = series, area
-                out.print(f"  · solar: lon {lonlat[0]:.5f}, lat {lonlat[1]:.5f}, "
-                          f"area {area:,.0f} m² · peak {max(series):,.3f}")
-                solar_box.children = [plotly_fig_to_html(
-                    _solar_fig(_avg24_series(series), CHART_SOLAR_PX))]
+                out.print(f"  · solar: lon {lonlat[0]:.5f}, lat {lonlat[1]:.5f}, area {area:,.0f} m² · peak {max(series):,.3f}")
+                solar_box.children = [plotly_fig_to_html(_solar_fig(_avg24_series(series), CHART_SOLAR_PX))]
             except Exception as exc:
-                solar_box.children = [_error_box(f"{type(exc).__name__}: {exc}",
-                                                 CHART_SOLAR_PX)]
+                solar_box.children = [_error_box(f"{type(exc).__name__}: {exc}", CHART_SOLAR_PX)]
         if on_gis_loaded:
             on_gis_loaded()
 
-    btn_gis = widgets.Button(description="Load GIS data",
-                             tooltip="Fetch real building footprints for the drawn "
-                                     "polygon from Sympheny GIS",
-                             layout=widgets.Layout(width="160px", height="34px"))
-    btn_center = widgets.Button(description="Center",
-                                tooltip="Recenter the map on the drawn polygon",
-                                layout=widgets.Layout(width="100px", height="34px"))
-    for b, cls in ((btn_gis, "wz-primary"), (btn_center, "wz-ghost")):
-        b.add_class(cls)
-        b.add_class("wz-pill")
+    btn_gis = _btn("Load GIS data", "wz-primary", "wz-pill", w="160px",
+                   tip="Fetch real building footprints for the drawn polygon from Sympheny GIS")
+    btn_center = _btn("Center", "wz-ghost", "wz-pill", w="100px", tip="Recenter the map on the drawn polygon")
     Spinned(vbox, spinner_html).bind(_work_load_gis, btn_gis)
     btn_center.on_click(_center)
-
-    panel = widgets.VBox([m, solar_box, widgets.HBox(
-        [btn_gis, btn_center], layout=widgets.Layout(margin="8px 0 0 0", gap="10px"))])
+    panel = widgets.VBox([m, solar_box, widgets.HBox([btn_gis, btn_center], layout=widgets.Layout(margin="8px 0 0 0", gap="10px"))])
     return panel, lambda: None               # step 1 has no readout to refresh
 
 
 # ------------------------------------------------------- step 2: site & bldgs
 def _buildings_from_gis_addresses(addresses):
-    """One building type per GIS address footprint. Only use/gfa reach the
-    demand API; the rest aren't in the payload, so they get editable defaults."""
+    """One building type per GIS address. Only use/gfa reach the demand API; the rest get editable defaults."""
     out = [{"name": a.get("address") or "Unnamed building",
-            "use": a.get("building_type") if a.get("building_type") in USE_TYPES
-            else USE_TYPES[0],
-            "period": "2000–2010", "renovated": "No",
-            "gfa": float(a.get("building_ground_area") or 0.0),
-            "zone": CLIMATE_ZONES[0], "diversity": 10.0, "epc": "C"}
-           for a in addresses]
+            "use": a.get("building_type") if a.get("building_type") in USE_TYPES else USE_TYPES[0],
+            "period": "2000–2010", "renovated": "No", "gfa": float(a.get("building_ground_area") or 0.0),
+            "zone": CLIMATE_ZONES[0], "diversity": 10.0, "epc": "C"} for a in addresses]
     return out or [dict(b) for b in DEFAULT_BUILDINGS]
 
 
 def _build_step_site(buildings):
     sel, loading = [0], [False]
-    side_header, totals_box, status = HTML(), HTML(), HTML()
-    kpi_row, agg_kpis, right_title = HTML(), HTML(), HTML()
-    type_list, preview_box, agg_chart = (widgets.VBox(),
-                                         widgets.VBox(layout=widgets.Layout(margin="0 0 0 14px")),
-                                         widgets.VBox())
-    btn_add = widgets.Button(description="+ Add", tooltip="Add a building type",
-                             layout=widgets.Layout(width="80px", height="30px",
-                                                   margin="0 8px 8px 0"))
-    btn_del = widgets.Button(description="Remove", tooltip="Remove selected type",
-                             layout=widgets.Layout(width="90px", height="30px",
-                                                   margin="0 0 8px 0"))
-    for b in (btn_add, btn_del):
-        b.add_class("wz-ghost")
+    side_header, totals_box, status, kpi_row, agg_kpis, right_title = (HTML() for _ in range(6))
+    type_list, agg_chart = widgets.VBox(), widgets.VBox()
+    preview_box = widgets.VBox(layout=widgets.Layout(margin="0 0 0 14px"))
+    btn_add = _btn("+ Add", "wz-ghost", w="80px", h="30px", tip="Add a building type", m="0 8px 8px 0")
+    btn_del = _btn("Remove", "wz-ghost", w="90px", h="30px", tip="Remove selected type", m="0 0 8px 0")
 
     fw = widgets.Layout(width="97%", height="32px")
-    F = {"name": widgets.Text(layout=fw),
-         "use": widgets.Dropdown(options=USE_TYPES, layout=fw),
-         "renovated": widgets.Dropdown(options=["No", "Yes"], layout=fw),
-         "gfa": widgets.FloatText(layout=fw),
-         "zone": widgets.Dropdown(options=CLIMATE_ZONES, layout=fw),
-         "diversity": widgets.FloatText(layout=fw),
-         "period": widgets.Dropdown(options=PERIODS,
-                                    layout=widgets.Layout(width="200px", height="32px"))}
-    epc_btns = []
-    for cls in EPC_COLOR:
-        b = widgets.Button(description=cls,
-                           layout=widgets.Layout(width="38px", height="30px",
-                                                 margin="0 5px 0 0"))
-        b.add_class("wz-chipbtn")
-        b._epc = cls
-        epc_btns.append(b)
+    F = {"name": widgets.Text(layout=fw), "use": widgets.Dropdown(options=USE_TYPES, layout=fw),
+         "renovated": widgets.Dropdown(options=["No", "Yes"], layout=fw), "gfa": widgets.FloatText(layout=fw),
+         "zone": widgets.Dropdown(options=CLIMATE_ZONES, layout=fw), "diversity": widgets.FloatText(layout=fw),
+         "period": widgets.Dropdown(options=PERIODS, layout=widgets.Layout(width="200px", height="32px"))}
+    epc_btns = [_btn(e, "wz-chipbtn", w="38px", h="30px", m="0 5px 0 0") for e in EPC_COLOR]
 
     def _col(label, key, caption):
-        return widgets.VBox([HTML(f"<div class='wz-label'>{label}</div>"), F[key],
-                             HTML(f"<div class='wz-caption'>{caption}</div>")],
+        return widgets.VBox([HTML(f"<div class='wz-label'>{label}</div>"), F[key], HTML(f"<div class='wz-caption'>{caption}</div>")],
                             layout=widgets.Layout(width="32%"))
 
     form = widgets.VBox([
-        widgets.HBox([_col("Name", "name", "Label used in the report"),
-                      _col("Use type", "use", "Sympheny building_type"),
+        widgets.HBox([_col("Name", "name", "Label used in the report"), _col("Use type", "use", "Sympheny building_type"),
                       _col("Renovated", "renovated", "Envelope refurbishment done")]),
         widgets.HBox([_col("Gross floor area", "gfa", "m² · sent as building_ground_area"),
                       _col("Climate zone", "zone", "Climate zone · solar irradiation"),
                       _col("Diversity factor", "diversity", "% reduction in aggregated peak")]),
-        widgets.HBox([HTML("<div class='wz-label' style='margin:8px 10px 0 2px'>Energy "
-                           "class <span style='color:#8a94a0'>(EU EPC / SIA 380/1)"
-                           "</span></div>"),
+        widgets.HBox([HTML("<div class='wz-label' style='margin:8px 10px 0 2px'>Energy class "
+                           "<span style='color:#8a94a0'>(EU EPC / SIA 380/1)</span></div>"),
                       widgets.HBox(epc_btns, layout=widgets.Layout(margin="4px 24px 0 0")),
-                      HTML("<div class='wz-label' style='margin:8px 10px 0 0'>"
-                           "Construction period</div>"), F["period"]],
-                     layout=widgets.Layout(align_items="center", margin="0 0 10px")),
-    ])
-    side = widgets.VBox([side_header, widgets.HBox([btn_add, btn_del]), type_list,
-                         totals_box],
+                      HTML("<div class='wz-label' style='margin:8px 10px 0 0'>Construction period</div>"), F["period"]],
+                     layout=widgets.Layout(align_items="center", margin="0 0 10px"))])
+    side = widgets.VBox([side_header, widgets.HBox([btn_add, btn_del]), type_list, totals_box],
                         layout=widgets.Layout(width="250px", margin="0 20px 0 0"))
-    right = widgets.VBox([right_title, form,
-                          widgets.HBox([kpi_row, preview_box],
-                                       layout=widgets.Layout(align_items="center"))],
+    right = widgets.VBox([right_title, form, widgets.HBox([kpi_row, preview_box], layout=widgets.Layout(align_items="center"))],
                          layout=widgets.Layout(width="calc(100% - 270px)"))
     panel = widgets.VBox([HTML("<div class='wz-title'>Site & buildings</div>"), status,
-                          widgets.HBox([side, right],
-                                       layout=widgets.Layout(align_items="flex-start")),
-                          agg_kpis, agg_chart])
-
-    def _totals():
-        surface = sum(float(b["gfa"] or 0) for b in buildings)
-        peaks = {c: 0.0 for c, _ in CARRIERS}
-        annuals, curves = dict(peaks), {c: [0.0] * 24 for c, _ in CARRIERS}
-        for b in buildings:
-            pk, an, cv = _dv(b, "peak"), _dv(b, "annual"), _dv(b, "avg24", [0.0] * 24)
-            for c, _ in CARRIERS:
-                peaks[c] += pk[c]
-                annuals[c] += an[c]
-                curves[c] = [x + y for x, y in zip(curves[c], cv[c])]
-        div = (sum(float(b["diversity"] or 0) for b in buildings) / len(buildings)
-               if buildings else 0.0)
-        coinc = max(0.0, 1.0 - div / 100.0)
-        return (surface, {c: v * coinc for c, v in peaks.items()},
-                annuals,                                   # energy: no coincidence
-                {c: [v * coinc for v in s] for c, s in curves.items()}, div, coinc)
+                          widgets.HBox([side, right], layout=widgets.Layout(align_items="flex-start")), agg_kpis, agg_chart])
 
     def _compute():
         pending = sum(1 for b in buildings if _demand_key(b) != b.get("_key"))
         if pending:
-            status.value = (f"<div class='wz-caption'>⏳ Fetching "
-                            f"{pending * len(CARRIERS)} demand profile(s) from "
-                            f"Sympheny in parallel…</div>")
-            preview_box.children = [_loader("Loading profile…", CHART_PREVIEW_PX,
-                                            CHART_PREVIEW_W)]
-            agg_chart.children = [_loader("Aggregating all building types…",
-                                          CHART_COMBINED_PX)]
+            status.value = (f"<div class='wz-caption'>⏳ Fetching {pending * len(CARRIERS)} demand profile(s) "
+                            f"from Sympheny in parallel…</div>")
+            preview_box.children = [_loader("Loading profile…", CHART_PREVIEW_PX, CHART_PREVIEW_W)]
+            agg_chart.children = [_loader("Aggregating all building types…", CHART_COMBINED_PX)]
         _load_demands(buildings)
-        status.value = "".join(f"<div class='wz-err'>⚠ {b['name']} — {b['_error']}</div>"
-                               for b in buildings if b.get("_error"))
+        status.value = "".join(f"<div class='wz-err'>⚠ {b['name']} — {b['_error']}</div>" for b in buildings if b.get("_error"))
 
     def _refresh_list():
         side_header.value = f"<div class='wz-title'>Building types ({len(buildings)})</div>"
         rows = []
         for i, b in enumerate(buildings):
-            btn = widgets.Button(
-                description=f"{'⚠' if b.get('_error') else '🏢'}  {b['name']}",
-                tooltip=f"{b['gfa']:,.0f} m² · {b['use']} · Class {b['epc']}",
-                layout=widgets.Layout(width="100%", height="32px", margin="0 0 1px 0"))
-            btn.add_class("wz-listitem")
+            btn = _btn(f"{'⚠' if b.get('_error') else '🏢'}  {b['name']}", "wz-listitem", w="100%", h="32px",
+                       tip=f"{b['gfa']:,.0f} m² · {b['use']} · Class {b['epc']}", m="0 0 1px 0")
             btn.style.button_color = "#e6f6f3" if i == sel[0] else "#ffffff"
             btn.style.font_weight = "bold" if i == sel[0] else "normal"
             btn.on_click(partial(_pick, i))
-            rows.append(widgets.VBox([btn, HTML(
-                f"<div class='wz-caption' style='margin:-3px 0 5px 30px'>"
-                f"{b['gfa']:,.0f} m² · {b['use']}</div>")]))
+            rows.append(widgets.VBox([btn, HTML(f"<div class='wz-caption' style='margin:-3px 0 5px 30px'>"
+                                                f"{b['gfa']:,.0f} m² · {b['use']}</div>")]))
         type_list.children = rows
-        surface, peaks, *_ = _totals()
-        totals_box.value = (
-                "<div class='wz-side wz-tot' style='margin-top:8px'>"
-                "<div style='font-size:10px;letter-spacing:.1em;color:#8a94a0'>"
-                "AGGREGATE TOTALS</div>"
-                f"Surface <span>{surface:,.0f} m²</span><br>" +
-                "<br>".join(f"{c} peak <span style='color:{col}'>{peaks[c]:,.0f} kW</span>"
-                            for c, col in CARRIERS) + "</div>")
+        surface, peaks, *_ = _site_totals(buildings)
+        totals_box.value = ("<div class='wz-side wz-tot' style='margin-top:8px'>"
+                            "<div style='font-size:10px;letter-spacing:.1em;color:#8a94a0'>AGGREGATE TOTALS</div>"
+                            f"Surface <span>{surface:,.0f} m²</span><br>" +
+                            "<br>".join(f"{c} peak <span style='color:{col}'>{peaks[c]:,.0f} kW</span>" for c, col in CARRIERS)
+                            + "</div>")
 
     def _refresh_right():
         if not buildings:
             right_title.value = "<i style='color:#8a94a0'>No building type defined.</i>"
-            kpi_row.value = ""
-            preview_box.children = []
+            kpi_row.value, preview_box.children = "", []
             return
         cur = buildings[sel[0]]
         tag = " <span class='wz-tag err'>FAILED</span>" if cur.get("_error") else ""
-        right_title.value = (
-            f"<div style='font-family:sans-serif;font-size:15px;font-weight:600;"
-            f"margin:0 0 8px'>🏢 {cur['name']}{tag}"
-            f"<span style='font-size:11px;color:#8a94a0;font-weight:400'>"
-            f"  type {sel[0] + 1} of {len(buildings)} · {cur['use']}</span></div>")
+        right_title.value = (f"<div style='font-family:sans-serif;font-size:15px;font-weight:600;margin:0 0 8px'>🏢 {cur['name']}{tag}"
+                             f"<span style='font-size:11px;color:#8a94a0;font-weight:400'>  type {sel[0] + 1} of {len(buildings)} · "
+                             f"{cur['use']}</span></div>")
         for b in epc_btns:
-            on = b._epc == cur["epc"]
-            b.style.button_color = EPC_COLOR[b._epc] if on else "#f2f4f7"
+            on = b.description == cur["epc"]
+            b.style.button_color = EPC_COLOR[b.description] if on else "#f2f4f7"
             b.style.font_weight = "bold" if on else "normal"
             b.style.text_color = "#ffffff" if on else "#6b7280"
         if cur.get("_error"):
-            kpi_row.value = ("<div class='wz-caption'>No demand data — the Sympheny "
-                             "request failed.</div>")
-            preview_box.children = [_error_box(cur["_error"], CHART_PREVIEW_PX,
-                                               CHART_PREVIEW_W)]
+            kpi_row.value = "<div class='wz-caption'>No demand data — the Sympheny request failed.</div>"
+            preview_box.children = [_error_box(cur["_error"], CHART_PREVIEW_PX, CHART_PREVIEW_W)]
             return
         pk, an = _dv(cur, "peak"), _dv(cur, "annual")
         kpi_row.value = "<div class='wz-row'>" + "".join(
-            _kpi(f"{c} peak", f"{pk[c]:,.0f}", f"kW · {an[c]:,.0f} MWh/y", col)
-            for c, col in CARRIERS) + "</div>"
+            _kpi(f"{c} peak", f"{pk[c]:,.0f}", f"kW · {an[c]:,.0f} MWh/y", col) for c, col in CARRIERS) + "</div>"
         preview_box.children = [plotly_fig_to_html(_profile_fig(
-            _dv(cur, "avg24", [0.0] * 24),
-            "Hourly profile preview (daily avg of 8760 h)",
-            CHART_PREVIEW_PX, CHART_PREVIEW_W))]
+            _dv(cur, "avg24", [0.0] * 24), "Hourly profile preview (daily avg of 8760 h)", CHART_PREVIEW_PX, CHART_PREVIEW_W))]
 
     def _refresh_band():
-        surface, peaks, annuals, curves, _div, _coinc = _totals()
+        surface, peaks, annuals, curves, *_ = _site_totals(buildings)
         cards = [_kpi("Surface", f"{surface:,.0f}", "m²", "#4a5568")]
         for c, col in CARRIERS:
             cards += [_kpi(f"{c} peak", f"{peaks[c]:,.0f}", "kW · coincident", col),
                       _kpi(f"{c} annual", f"{annuals[c]:,.0f}", "MWh/y", col)]
-        cards = cards[:6]           # the band stops at the DHW peak, as before
         missing = sum(1 for b in buildings if b.get("_error"))
-        note = (f" <span style='text-transform:none;letter-spacing:0;color:#b3312c "
-                f"!important'>· {missing} type(s) missing</span>") if missing else ""
-        agg_kpis.value = (f"<div class='wz-band'><h4>Σ Aggregated totals — all "
-                          f"{len(buildings)} building types{note}</h4>"
-                          f"<div class='wz-row'>{''.join(cards)}</div></div>")
-        agg_chart.children = [plotly_fig_to_html(_profile_fig(
-            curves, "Combined hourly profile – all zones & carriers", CHART_COMBINED_PX))]
+        note = (f" <span style='text-transform:none;letter-spacing:0;color:#b3312c !important'>"
+                f"· {missing} type(s) missing</span>") if missing else ""
+        agg_kpis.value = (f"<div class='wz-band'><h4>Σ Aggregated totals — all {len(buildings)} building types{note}</h4>"
+                          f"<div class='wz-row'>{''.join(cards[:6])}</div></div>")   # the band stops at the DHW peak
+        agg_chart.children = [plotly_fig_to_html(_profile_fig(curves, "Combined hourly profile – all zones & carriers",
+                                                              CHART_COMBINED_PX))]
 
     def refresh_all(recompute=True):
         if recompute:
@@ -606,8 +479,7 @@ def _build_step_site(buildings):
             return
         cur = buildings[sel[0]]
         cur.update({k: w.value for k, w in F.items()})
-        cur["name"] = cur["name"] or "Unnamed"
-        cur["gfa"] = max(0.0, cur["gfa"])
+        cur["name"], cur["gfa"] = cur["name"] or "Unnamed", max(0.0, cur["gfa"])
         refresh_all()
 
     def _pick(index, _btn=None):
@@ -618,14 +490,12 @@ def _build_step_site(buildings):
 
     def _on_epc(b):
         if buildings:
-            buildings[sel[0]]["epc"] = b._epc      # metadata only, no refetch
+            buildings[sel[0]]["epc"] = b.description      # metadata only, no refetch
             refresh_all(recompute=False)
 
     def _on_add(_b):
-        buildings.append({"name": f"Building type {len(buildings) + 1}",
-                          "use": "OFFICES", "period": "2000–2010", "renovated": "No",
-                          "gfa": 1000.0, "zone": CLIMATE_ZONES[0], "diversity": 10.0,
-                          "epc": "C"})
+        buildings.append({"name": f"Building type {len(buildings) + 1}", "use": "OFFICES", "period": "2000–2010",
+                          "renovated": "No", "gfa": 1000.0, "zone": CLIMATE_ZONES[0], "diversity": 10.0, "epc": "C"})
         sel[0] = len(buildings) - 1
         _load_form()
         refresh_all()
@@ -653,30 +523,18 @@ def _build_step_variants(variants):
     """Variant columns; technologies are added through a modal picker."""
     row = widgets.HBox(layout=widgets.Layout(align_items="flex-start", overflow="auto"))
     modal_title, modal_body = HTML(), widgets.VBox()
-    btn_close = widgets.Button(description="Cancel",
-                               layout=widgets.Layout(width="100px", height="34px"))
-    btn_close.add_class("wz-ghost")
-    btn_close.add_class("wz-pill")
+    btn_close = _btn("Cancel", "wz-ghost", "wz-pill", w="100px")
     modal_card = widgets.VBox([modal_title, modal_body, widgets.HBox(
-        [btn_close], layout=widgets.Layout(justify_content="flex-end",
-                                           margin="12px 0 0 0"))])
+        [btn_close], layout=widgets.Layout(justify_content="flex-end", margin="12px 0 0 0"))])
     modal_card.add_class("wz-modal-card")
     modal = widgets.Box([modal_card])
     modal.add_class("wz-modal")
     modal.layout.display = "none"
 
-    def _button(desc, cls, width, height, tooltip="", margin=""):
-        b = widgets.Button(description=desc, tooltip=tooltip,
-                           layout=widgets.Layout(width=width, height=height,
-                                                 margin=margin))
-        b.add_class(cls)
-        return b
-
     def _open_modal(vi, _b=None):
-        var, color = variants[vi], VARIANT_COLORS[vi % len(VARIANT_COLORS)]
-        modal_title.value = (f"<div class='wz-modal-title'>Add technology</div>"
-                             f"<div class='wz-caption'>to <b style='color:{color} "
-                             f"!important'>V{vi + 1}</b> · {var['name']}</div>")
+        var, color = variants[vi], _vcolor(vi)
+        modal_title.value = (f"<div class='wz-modal-title'>Add technology</div><div class='wz-caption'>to "
+                             f"<b style='color:{color} !important'>V{vi + 1}</b> · {var['name']}</div>")
         blocks = []
         for cat, techs in TECH_CATALOG.items():
             available = [t for t in techs if t[0] not in var["techs"]]
@@ -684,12 +542,10 @@ def _build_step_variants(variants):
                 continue
             blocks.append(HTML(f"<div class='wz-cat'>{cat}</div>"))
             for tech, sub, icon in available:
-                b = _button(f"{icon}   {tech}", "wz-pick", "99%", "34px", sub, "0 0 2px 0")
+                b = _btn(f"{icon}   {tech}", "wz-pick", w="99%", tip=sub, m="0 0 2px 0")
                 b.on_click(partial(_add_tech, vi, tech))
-                blocks += [b, HTML(f"<div class='wz-sub' style='margin:-4px 0 6px 30px'>"
-                                   f"{sub}</div>")]
-        modal_body.children = blocks or [HTML("<div class='wz-caption'>Every technology "
-                                              "is already part of this variant.</div>")]
+                blocks += [b, HTML(f"<div class='wz-sub' style='margin:-4px 0 6px 30px'>{sub}</div>")]
+        modal_body.children = blocks or [HTML("<div class='wz-caption'>Every technology is already part of this variant.</div>")]
         modal.layout.display = "flex"
 
     def _close_modal(_b=None):
@@ -708,39 +564,31 @@ def _build_step_variants(variants):
 
     def _tech_card(vi, tech, color):
         _cat, sub, icon = TECH_INDEX.get(tech, ("", "", "•"))
-        text = HTML(f"<div style='display:flex;align-items:center;gap:9px'>"
-                    f"<span style='font-size:16px'>{icon}</span><span>"
-                    f"<div class='wz-tech-name'>{tech}</div>"
-                    f"<div class='wz-tech-sub'>{sub}</div></span></div>",
+        text = HTML(f"<div style='display:flex;align-items:center;gap:9px'><span style='font-size:16px'>{icon}</span><span>"
+                    f"<div class='wz-tech-name'>{tech}</div><div class='wz-tech-sub'>{sub}</div></span></div>",
                     layout=widgets.Layout(width="205px"))
-        badge = HTML(f"<div style='width:20px;height:20px;border-radius:50%;"
-                     f"background:{color};color:#fff !important;font-size:11px;"
-                     f"display:flex;align-items:center;justify-content:center'>"
-                     f"\u2713</div>")
-        rm = _button("✕", "wz-x", "26px", "26px", f"Remove {tech}")
+        badge = HTML(f"<div style='width:20px;height:20px;border-radius:50%;background:{color};color:#fff !important;"
+                     f"font-size:11px;display:flex;align-items:center;justify-content:center'>✓</div>")
+        rm = _btn("✕", "wz-x", w="26px", h="26px", tip=f"Remove {tech}")
         rm.on_click(partial(_remove_tech, vi, tech))
         return widgets.HBox([text, badge, rm], layout=widgets.Layout(
-            width="272px", margin="0 0 6px 0", padding="8px 10px",
-            align_items="center", justify_content="space-between",
-            border=f"1px solid {color}66", border_radius="10px"))
+            width="272px", margin="0 0 6px 0", padding="8px 10px", align_items="center",
+            justify_content="space-between", border=f"1px solid {color}66", border_radius="10px"))
 
     def _render():
         cols = []
         for vi, var in enumerate(variants):
-            color = VARIANT_COLORS[vi % len(VARIANT_COLORS)]
-            name = widgets.Text(value=var["name"],
-                                layout=widgets.Layout(width="200px", height="32px"))
+            color = _vcolor(vi)
+            name = widgets.Text(value=var["name"], layout=widgets.Layout(width="200px", height="32px"))
             name.observe(partial(_on_name, vi), names="value")
-            head = [HTML(f"<div style='background:{color};color:#fff !important;"
-                         f"border-radius:50%;width:24px;height:24px;line-height:24px;"
-                         f"text-align:center;font-size:11px;font-weight:700;"
-                         f"font-family:sans-serif'>V{vi + 1}</div>"), name]
+            head = [HTML(f"<div style='background:{color};color:#fff !important;border-radius:50%;width:24px;height:24px;"
+                         f"line-height:24px;text-align:center;font-size:11px;font-weight:700;font-family:sans-serif'>"
+                         f"V{vi + 1}</div>"), name]
             if len(variants) > 1:
-                close = _button("✕", "wz-x", "28px", "28px", "Remove variant")
+                close = _btn("✕", "wz-x", w="28px", h="28px", tip="Remove variant")
                 close.on_click(partial(_on_remove_variant, vi))
                 head.append(close)
-            items = [widgets.HBox(head, layout=widgets.Layout(align_items="center",
-                                                              margin="0 0 8px 0"))]
+            items = [widgets.HBox(head, layout=widgets.Layout(align_items="center", margin="0 0 8px 0"))]
             for cat in TECH_CATALOG:
                 chosen = [t for t, _s, _i in TECH_CATALOG[cat] if t in var["techs"]]
                 if chosen:
@@ -748,19 +596,16 @@ def _build_step_variants(variants):
                     items += [_tech_card(vi, t, color) for t in chosen]
             if not var["techs"]:
                 items.append(HTML("<div class='wz-caption'>No technology yet.</div>"))
-            add = _button("+ Add technology", "wz-addtech", "272px", "34px",
-                          margin="6px 0 0 0")
+            add = _btn("+ Add technology", "wz-addtech", w="272px", m="6px 0 0 0")
             add.on_click(partial(_open_modal, vi))
             items.append(add)
             cols.append(widgets.VBox(items, layout=widgets.Layout(
-                width="310px", padding="12px 14px", margin="0 12px 0 0",
-                border=f"1px solid {color}55", border_radius="12px")))
-        add_var = _button("+  Add variant", "wz-addtech", "150px", "38px")
+                width="310px", padding="12px 14px", margin="0 12px 0 0", border=f"1px solid {color}55", border_radius="12px")))
+        add_var = _btn("+  Add variant", "wz-addtech", w="150px", h="38px")
         add_var.on_click(_on_add_variant)
-        cols.append(widgets.VBox(
-            [HTML("<div class='wz-caption' style='margin:40px 0 8px'> </div>"), add_var],
-            layout=widgets.Layout(width="180px", padding="12px", align_items="center",
-                                  border="1px dashed #d5dbe2", border_radius="12px")))
+        cols.append(widgets.VBox([HTML("<div class='wz-caption' style='margin:40px 0 8px'> </div>"), add_var],
+                                 layout=widgets.Layout(width="180px", padding="12px", align_items="center",
+                                                       border="1px dashed #d5dbe2", border_radius="12px")))
         row.children = cols
 
     def _on_name(vi, change):
@@ -776,72 +621,47 @@ def _build_step_variants(variants):
             _render()
 
     btn_close.on_click(_close_modal)
-    panel = widgets.VBox([
-        HTML("<div class='wz-title'>Define your energy system variants</div>"
-             "<div class='wz-caption'>Add technologies to each variant with the + "
-             "button. Each variant is optimised separately.</div>"), row])
+    panel = widgets.VBox([HTML("<div class='wz-title'>Define your energy system variants</div><div class='wz-caption'>"
+                               "Add technologies to each variant with the + button. Each variant is optimised separately.</div>"), row])
     _render()
     return panel, _render, modal
 
 
 # ----------------------------------------------------------- step 4: summary
 def _summary_html(buildings, variants):
-    surface = sum(float(b["gfa"] or 0) for b in buildings)
-    peaks = {c: sum(_dv(b, "peak")[c] for b in buildings) for c, _ in CARRIERS}
-    annuals = {c: sum(_dv(b, "annual")[c] for b in buildings) for c, _ in CARRIERS}
-    div = (sum(float(b["diversity"] or 0) for b in buildings) / len(buildings)
-           if buildings else 0.0)
-    coinc = max(0.0, 1.0 - div / 100.0)
-    peaks = {c: v * coinc for c, v in peaks.items()}
-
+    surface, peaks, annuals, _curves, div, coinc = _site_totals(buildings)
     rows = []
     for i, b in enumerate(buildings):
-        pk = _dv(b, "peak")
-        demand = (f"<span style='color:#b3312c !important'>no demand data — "
-                  f"{b['_error']}</span>") if b.get("_error") else " · ".join(
-            f"{c.lower() if c != 'DHW' else c} {pk[c]:,.0f} kW" for c, _ in CARRIERS)
-        tag = " <span class='wz-tag err'>FAILED</span>" if b.get("_error") else ""
-        rows.append(
-            f"<tr><td class='k'>#{i + 1}  {b['name']}</td><td class='v'>"
-            f"{b['use']} · {b['period']} · renovated: {b['renovated']}{tag}<br>"
-            f"<span style='font-weight:400;color:#6b7280'>{b['gfa']:,.0f} m² · "
-            f"{b['zone']} · diversity {b['diversity']:.0f}% · class "
-            f"<b style='color:{EPC_COLOR[b['epc']]} !important'>{b['epc']}</b><br>"
-            f"{demand}</span></td></tr>")
-
+        pk, err = _dv(b, "peak"), b.get("_error")
+        demand = (f"<span style='color:#b3312c !important'>no demand data — {err}</span>" if err else
+                  " · ".join(f"{c if c == 'DHW' else c.lower()} {pk[c]:,.0f} kW" for c, _ in CARRIERS))
+        tag = " <span class='wz-tag err'>FAILED</span>" if err else ""
+        rows.append(f"<tr><td class='k'>#{i + 1}  {b['name']}</td><td class='v'>{b['use']} · {b['period']} · "
+                    f"renovated: {b['renovated']}{tag}<br><span style='font-weight:400;color:#6b7280'>{b['gfa']:,.0f} m² · "
+                    f"{b['zone']} · diversity {b['diversity']:.0f}% · class "
+                    f"<b style='color:{EPC_COLOR[b['epc']]} !important'>{b['epc']}</b><br>{demand}</span></td></tr>")
     missing = [b["name"] for b in buildings if b.get("_error")]
-    warn = (f"<tr><td class='k'>Incomplete</td><td class='v' style='color:#b3312c "
-            f"!important'>{', '.join(missing)} excluded — demand fetch failed</td></tr>"
-            ) if missing else ""
+    warn = (f"<tr><td class='k'>Incomplete</td><td class='v' style='color:#b3312c !important'>"
+            f"{', '.join(missing)} excluded — demand fetch failed</td></tr>") if missing else ""
     vrows = []
     for vi, var in enumerate(variants):
-        color = VARIANT_COLORS[vi % len(VARIANT_COLORS)]
-        chips = "".join(f"<span class='wz-chip' style='background:{color}1a;"
-                        f"color:{color} !important'>{t}</span>" for t in var["techs"]) \
-                or "<i style='color:#8a94a0'>no technology selected</i>"
-        vrows.append(f"<tr><td class='k'><b style='color:{color}'>V{vi + 1}</b> "
-                     f"{var['name']}</td><td class='v'>{chips}</td></tr>")
-
+        color = _vcolor(vi)
+        chips = "".join(f"<span class='wz-chip' style='background:{color}1a;color:{color} !important'>{t}</span>"
+                        for t in var["techs"]) or "<i style='color:#8a94a0'>no technology selected</i>"
+        vrows.append(f"<tr><td class='k'><b style='color:{color}'>V{vi + 1}</b> {var['name']}</td><td class='v'>{chips}</td></tr>")
     return ("<div class='wz-title'>Summary</div>"
-            f"<div class='wz-sum'><h3>Site & buildings ({len(buildings)} types)</h3>"
-            f"<table>{''.join(rows)}</table></div>"
+            f"<div class='wz-sum'><h3>Site & buildings ({len(buildings)} types)</h3><table>{''.join(rows)}</table></div>"
             "<div class='wz-sum'><h3>Aggregated totals</h3><table>"
             f"<tr><td class='k'>Surface</td><td class='v'>{surface:,.0f} m²</td></tr>" +
-            "".join(f"<tr><td class='k'>{c} peak / annual</td><td class='v'>"
-                    f"{peaks[c]:,.0f} kW · {annuals[c]:,.0f} MWh/y</td></tr>"
+            "".join(f"<tr><td class='k'>{c} peak / annual</td><td class='v'>{peaks[c]:,.0f} kW · {annuals[c]:,.0f} MWh/y</td></tr>"
                     for c, _ in CARRIERS) +
-            f"<tr><td class='k'>Coincidence applied</td><td class='v'>{coinc:.2f} "
-            f"(mean diversity {div:.0f}%)</td></tr>{warn}</table></div>"
-            f"<div class='wz-sum'><h3>System variants ({len(variants)})</h3>"
-            f"<table>{''.join(vrows)}</table></div>")
+            f"<tr><td class='k'>Coincidence applied</td><td class='v'>{coinc:.2f} (mean diversity {div:.0f}%)</td></tr>{warn}"
+            f"</table></div><div class='wz-sum'><h3>System variants ({len(variants)})</h3><table>{''.join(vrows)}</table></div>")
 
 
 def _build_step_summary(buildings, variants):
     body = HTML()
-    btn_submit = widgets.Button(description="Submit",
-                                layout=widgets.Layout(width="150px", height="36px"))
-    btn_submit.add_class("wz-primary")
-    btn_submit.add_class("wz-pill")
+    btn_submit = _btn("Submit", "wz-primary", "wz-pill", w="150px", h="36px")
 
     def refresh():
         body.value = _summary_html(buildings, variants)
@@ -854,49 +674,32 @@ def _build_step_summary(buildings, variants):
 def run():
     # Phase 1: bare shell, displayed immediately.
     nav_widget = HTML()
-    content_area = widgets.VBox([_loading_html()], layout=widgets.Layout(
-        min_height=f"{CONTENT_MIN_PX}px", overflow="visible"))
-    footer = widgets.HBox(layout=widgets.Layout(
-        width="100%", justify_content="space-between", align_items="center",
-        margin="10px 0 0 0", padding="10px 0 0 0", border_top=f"1px solid {LINE}"))
+    content_area = widgets.VBox([_loading_html()], layout=widgets.Layout(min_height=f"{CONTENT_MIN_PX}px", overflow="visible"))
+    footer = widgets.HBox(layout=widgets.Layout(width="100%", justify_content="space-between", align_items="center",
+                                                margin="10px 0 0 0", padding="10px 0 0 0", border_top=f"1px solid {LINE}"))
     spinner_html, vbox, modal_container = get_spinner_html(), widgets.VBox(), widgets.VBox()
-    display(HTML(WZ_CSS), nav_widget, content_area, footer, HTML("<br/>"),
-            spinner_html, vbox, modal_container)
+    display(HTML(WZ_CSS), nav_widget, content_area, footer, HTML("<br/>"), spinner_html, vbox, modal_container)
 
     def _init_app():
-        # Phase 2: the real thing, once the browser is ready. Step 1 is built
-        # eagerly (it's the first page); the rest lazily, on first visit.
+        # Phase 2, once the browser is ready. Step 1 is built eagerly; the rest lazily, on first visit.
         _authenticate()
         site = {"polygon": None}
         buildings = [dict(b) for b in DEFAULT_BUILDINGS]
-        variants = [{"name": v["name"], "techs": list(v["techs"])}
-                    for v in DEFAULT_VARIANTS]
+        variants = [{"name": v["name"], "techs": list(v["techs"])} for v in DEFAULT_VARIANTS]
         panels, refreshers, extras, current = {}, {}, {}, [0]
 
         panels[0], refreshers[0] = _build_step_location(
-            site, vbox, spinner_html,
-            on_gis_loaded=lambda: (panels.pop(1, None), refreshers.pop(1, None)))
+            site, vbox, spinner_html, on_gis_loaded=lambda: (panels.pop(1, None), refreshers.pop(1, None)))
         panels[0].layout.margin = "4px 0 0 0"
-
-        def _mk(desc, cls, width):
-            b = widgets.Button(description=desc, layout=widgets.Layout(
-                width=width, height="36px"))
-            b.add_class(cls)
-            b.add_class("wz-pill")
-            return b
-
-        btn_prev, btn_next = _mk("←  Back", "wz-ghost", "120px"), _mk(
-            "Continue  →", "wz-primary", "150px")
-        right_actions = widgets.HBox([btn_next], layout=widgets.Layout(
-            align_items="center", gap="10px"))
+        btn_prev = _btn("←  Back", "wz-ghost", "wz-pill", w="120px", h="36px")
+        btn_next = _btn("Continue  →", "wz-primary", "wz-pill", w="150px", h="36px")
+        right_actions = widgets.HBox([btn_next], layout=widgets.Layout(align_items="center", gap="10px"))
         footer.children = [btn_prev, right_actions]
 
         def _ensure_step(index):
             if index in panels:
                 return
-            if index == 1:
-                # GIS fetched in step 1 replaces the defaults with one type
-                # per address found on the site.
+            if index == 1:   # GIS fetched in step 1 replaces the defaults with one type per address
                 addresses = (site.get("gis") or {}).get("addresses") or []
                 if addresses:
                     buildings[:] = _buildings_from_gis_addresses(addresses)
@@ -905,26 +708,22 @@ def run():
                 panels[2], refreshers[2], modal = _build_step_variants(variants)
                 modal_container.children = [modal]
             elif index == 3:
-                panels[3], btn_submit, refreshers[3] = _build_step_summary(
-                    buildings, variants)
+                panels[3], btn_submit, refreshers[3] = _build_step_summary(buildings, variants)
                 extras["btn_submit"] = btn_submit
-                Spinned(vbox, spinner_html).bind(
-                    lambda out: _work_submit(out, buildings, variants, site), btn_submit)
+                Spinned(vbox, spinner_html).bind(lambda out: _work_submit(out, buildings, variants, site), btn_submit)
             panels[index].layout.margin = "4px 0 0 0"
 
         def go_to(index):
             index = max(0, min(len(STEP_DEFS) - 1, index))
             nav_widget.value = _render_nav_html(index)
             btn_prev.layout.visibility = "hidden" if index == 0 else "visible"
-            content_area.children = [_loading_html(
-                "LOADING DEMANDS FROM SYMPHENY BACKEND …", big=True) if index == 1
+            content_area.children = [_loading_html("LOADING DEMANDS FROM SYMPHENY BACKEND …", big=True) if index == 1
                                      else _loading_html()]
             _ensure_step(index)
             refreshers[index]()
             current[0] = index
             content_area.children = [panels[index]]
-            right_actions.children = ((extras["btn_submit"],)
-                                      if index == len(STEP_DEFS) - 1 else (btn_next,))
+            right_actions.children = (extras["btn_submit"],) if index == len(STEP_DEFS) - 1 else (btn_next,)
 
         btn_prev.on_click(lambda _: go_to(current[0] - 1))
         btn_next.on_click(lambda _: go_to(current[0] + 1))
@@ -936,46 +735,33 @@ def run():
 # ===========================================================================
 ## BACKEND API CALLS
 # Everything below talks to Sympheny or derives numbers from what it returned.
-# Nothing here touches ipywidgets: the UI above renders whatever comes back
-# (including the error strings).
+# Nothing here touches ipywidgets: the UI above renders whatever comes back.
 # ===========================================================================
 
 CONSTRUCTION_END = 2000       # fixed – not driven by the form
 NBR_FLOOR = 1                 # fixed – so building_ground_area == GFA
 HTTP_TIMEOUT = 90
 MAX_WORKERS = 12              # ceiling for one batch of building x carrier calls
-PROJECT_NAME = "light-app"    # reused across submits; only its variants
-# analysis is deleted & recreated each time
+PROJECT_NAME = "light-app"    # reused across submits; only its variants analysis is deleted & recreated
 HUB_NAME, STAGE_NAME = "Hub 1", "Stage 1"
-
-# Dedicated analysis inside PROJECT_NAME used only to preview GIS footprints
-# for the drawn polygon (step 1), separate from the per-variant analysis
-# created at submit. The analysis is reused; its scenario is deleted and
-# recreated on every "Load GIS data" click so the hub made right after is its
-# only hub. That scenario is also the source copied onto every variant
-# scenario at submit time (_copy_scenario_gis), and its hub shares HUB_NAME.
+# Dedicated analysis inside PROJECT_NAME used only to preview GIS footprints (step 1). The analysis
+# is reused; its scenario is deleted and recreated on every "Load GIS data" so the hub made right
+# after is its only hub. That scenario is copied onto every variant scenario at submit time.
 GIS_ANALYSIS_NAME = GIS_SCENARIO_NAME = "site-gis"
 GIS_JOB_MAX_ATTEMPTS, GIS_JOB_POLL_SECONDS = 300, 1.0
 
-CARRIER_DEMAND_TYPE = {"Heat": "SPACE_HEATING", "Elec": "ELECTRICITY",
-                       "DHW": "HOT_WATER"}
-# EnergyCarrierRequestDtoV2.subType per app carrier — also the key used to
-# reuse a carrier the technology package already created: the imported
-# technologies emit HEAT_8 for space heating and HEAT_4 for DHW, so these must
-# match or every scenario ends up with duplicate heat carriers.
+CARRIER_DEMAND_TYPE = {"Heat": "SPACE_HEATING", "Elec": "ELECTRICITY", "DHW": "HOT_WATER"}
+# EnergyCarrierRequestDtoV2.subType per app carrier — also the key used to reuse a carrier the
+# technology package created: imported technologies emit HEAT_8 (space heating) and HEAT_4 (DHW),
+# so these must match or every scenario ends up with duplicate heat carriers.
 CARRIER_SUBTYPE = {"Heat": "HEAT_8", "Elec": "ELECTRICITY", "DHW": "HEAT_4"}
-CARRIER_FULL_NAME = {"Heat": "Space heating", "Elec": "Electricity",
-                     "DHW": "Domestic hot water"}
-# Subtype that importing "Solar PV - Roof" creates for its incoming solar
-# resource (distinct from the ELECTRICITY carrier for its output). The
-# solar-on-site-resource endpoint only accepts a fixed resource-type list, and
-# SOLAR_ROOF is the one that import brings in — so it's reused, not recreated.
+CARRIER_FULL_NAME = {"Heat": "Space heating", "Elec": "Electricity", "DHW": "Domestic hot water"}
+# Subtype that importing "Solar PV - Roof" creates for its incoming solar resource; reused, not recreated.
 SOLAR_RESOURCE_SUBTYPE = "SOLAR_ROOF"
-# Import price is deliberately huge so the optimiser treats grid draw as a
-# last resort rather than a cheap substitute for on-site technologies.
+# Import price is deliberately huge so the optimiser treats grid draw as a last resort.
 IMPEX_ELEC_PRICE = {"IMPORT": 10000.0, "EXPORT": 1.0}
-SOLVER = {"objective2": None, "name": "j", "clientType": "APP",
-          "temporalResolution": "LOW", "points": 1, "timeLimit": 30, "mipGap": 10}
+SOLVER = {"objective2": None, "name": "j", "clientType": "APP", "temporalResolution": "LOW",
+          "points": 1, "timeLimit": 30, "mipGap": 10}
 SOLVER_OBJECTIVE = "MIN_LIFE_CYCLE_COST"
 SOLVER_WAIT_SECONDS, SOLVER_POLL_SECONDS = 300, 5
 APP_TO_DB = {                 # app label -> Sympheny database technology name
@@ -1015,58 +801,46 @@ def _d(method, url, **kw):
     return _raw(method, url, **kw).json()["data"]
 
 
-def _get_or_create(list_url, create_url, name_key, guid_key, name, body, pick=None):
-    """Reuse the item called `name`, or create it. `body` may be a callable
-    taking the existing items (the stage endpoint needs their count)."""
-    items = _d("get", list_url)
+def _get_or_create(url, name_key, guid_key, name, body, pick=None):
+    """Reuse the item called `name` from GET url, or POST it to the same url. `body` may be a
+    callable taking the existing items (the stage endpoint needs their count)."""
+    items = _d("get", url)
     items = pick(items) if pick else (items or [])
     for it in items:
         if it.get(name_key) == name:
             return it[guid_key]
-    return _d("post", create_url,
-              json=body(items) if callable(body) else body)[guid_key]
+    return _d("post", url, json=body(items) if callable(body) else body)[guid_key]
 
 
 def _project(name=PROJECT_NAME):
-    return _get_or_create(f"{BE_URL}projects", f"{BE_URL}projects", "projectName",
-                          "projectGuid", name,
-                          {"projectName": name, "version": "V2"},
-                          pick=lambda d: d["projects"])
+    return _get_or_create(f"{BE_URL}projects", "projectName", "projectGuid", name,
+                          {"projectName": name, "version": "V2"}, pick=lambda d: d["projects"])
 
 
 def _analysis(project_guid, name):
-    return _get_or_create(f"{BE_URL}projects/{project_guid}/analyses",
-                          f"{BE_URL}projects/{project_guid}/analyses",
-                          "analysisName", "analysisGuid", name, {"analysisName": name})
+    return _get_or_create(f"{BE_URL}projects/{project_guid}/analyses", "analysisName", "analysisGuid", name,
+                          {"analysisName": name})
 
 
 def _hub(scenario_guid, name=HUB_NAME):
-    return _get_or_create(f"{BE_URL}scenarios/{scenario_guid}/hubs",
-                          f"{BE_URL}scenarios/{scenario_guid}/hubs",
-                          "hubName", "hubGuid", name, {"hubName": name})
+    return _get_or_create(f"{BE_URL}scenarios/{scenario_guid}/hubs", "hubName", "hubGuid", name, {"hubName": name})
 
 
 def _stage(scenario_guid, name=STAGE_NAME):
-    return _get_or_create(f"{BE_URL}scenarios/{scenario_guid}/stages",
-                          f"{BE_URL}scenarios/{scenario_guid}/stages",
-                          "name", "guid", name,
-                          lambda items: {"name": name, "index": len(items) + 1,
-                                         "length": 1})
+    return _get_or_create(f"{BE_URL}scenarios/{scenario_guid}/stages", "name", "guid", name,
+                          lambda items: {"name": name, "index": len(items) + 1, "length": 1})
 
 
 def _reset_analysis(project_guid, name):
-    """Delete any analysis of this name, then create a fresh one — rather than
-    recreating the whole project, so the step-1 GIS analysis survives."""
+    """Delete any analysis of this name, then create a fresh one (the project, and its GIS analysis, survive)."""
     for a in _d("get", f"{BE_URL}projects/{project_guid}/analyses") or []:
         if a.get("analysisName") == name:
             _raw("delete", f"{BE_URL}analysis/{a['analysisGuid']}")
-    return _d("post", f"{BE_URL}projects/{project_guid}/analyses",
-              json={"analysisName": name})["analysisGuid"]
+    return _d("post", f"{BE_URL}projects/{project_guid}/analyses", json={"analysisName": name})["analysisGuid"]
 
 
 def _reset_scenario(analysis_guid, name):
-    """Delete any scenario of this name, then create a fresh one — a new
-    scenario has no hubs, so the hub created right after is its only one."""
+    """Delete any scenario of this name, then create a fresh one — it has no hubs yet."""
     for s in _d("get", f"{BE_URL}analysis/{analysis_guid}")["scenarios"]:
         if s.get("scenarioName") == name:
             _raw("delete", f"{BE_URL}scenario/{s['scenarioGuid']}")
@@ -1074,38 +848,28 @@ def _reset_scenario(analysis_guid, name):
 
 
 def _create_scenario(analysis_guid, name):
-    return _d("post", f"{BE_URL}analysis/{analysis_guid}/scenario",
-              json={"scenarioName": name})["scenarioGuid"]
+    return _d("post", f"{BE_URL}analysis/{analysis_guid}/scenario", json={"scenarioName": name})["scenarioGuid"]
 
 
 # ------------------------------------------------- step 2: demand retrieval
 def _fetch_carrier(building_type, area, carrier):
-    """One hub_demand + profile round-trip. Returns peak [kW], annual [MWh/y],
-    the 24 h daily-average curve [kW] and the full 8760 h series [kW] (kept for
-    submit). Raises on any transport/payload problem — callers surface it."""
+    """One hub_demand + profile round-trip. Returns peak [kW], annual [MWh/y], the 24 h
+    daily-average curve [kW] and the full 8760 h series [kW]. Raises on any problem."""
     if area <= 0:
         return {"peak": 0.0, "annual": 0.0, "avg24": [0.0] * 24, "series": [0.0] * 8760}
     key = (building_type, round(float(area), 3), carrier)
     if key in _DEMAND_CACHE:
         return _DEMAND_CACHE[key]
-
     demand_type = CARRIER_DEMAND_TYPE[carrier]
-    meta = _raw("post", f"{SYMPHENY_BASE_URL}api-services/demand/hub_demand"
-                        f"?demand_type={demand_type}&building_type={building_type}",
-                json=[{"construction_end": CONSTRUCTION_END,
-                       "building_ground_area": float(area),
-                       "nbr_floor": NBR_FLOOR}]).json()[0]
+    meta = _raw("post", f"{SYMPHENY_BASE_URL}api-services/demand/hub_demand?demand_type={demand_type}&building_type={building_type}",
+                json=[{"construction_end": CONSTRUCTION_END, "building_ground_area": float(area), "nbr_floor": NBR_FLOOR}]).json()[0]
     guid, total = meta["energyDemandMetadataGuid"], meta["totalAnnualDemand"]
     data = _d("get", f"{BE_URL}database-energy-demands/{guid}/profile")
     if len(data) != 8760:
         raise ValueError(f"{demand_type}: expected 8760 periods, got {len(data)}")
-
-    # Each entry is a normalised share of the annual total; sort by period,
-    # the order isn't guaranteed.
-    series = [item["demandValue"] * total
-              for item in sorted(data, key=lambda x: x["period"])]
-    _DEMAND_CACHE[key] = {"peak": max(series), "annual": total / 1000.0,
-                          "avg24": _avg24_series(series), "series": series}
+    # Each entry is a normalised share of the annual total; period order isn't guaranteed.
+    series = [item["demandValue"] * total for item in sorted(data, key=lambda x: x["period"])]
+    _DEMAND_CACHE[key] = {"peak": max(series), "annual": total / 1000.0, "avg24": _avg24_series(series), "series": series}
     return _DEMAND_CACHE[key]
 
 
@@ -1115,18 +879,14 @@ def _demand_key(b):
 
 
 def _load_demands(buildings):
-    """Fetch every stale building's carriers in ONE parallel batch (3x3 = 9
-    concurrent round-trips on first render). Failures are recorded per building
-    in `_error` and never replaced by invented numbers."""
-    stale = [b for b in buildings
-             if not (b.get("_key") == _demand_key(b)
-                     and (b.get("_demand") or b.get("_error")))]
+    """Fetch every stale building's carriers in ONE parallel batch. Failures are recorded per
+    building in `_error` and never replaced by invented numbers."""
+    stale = [b for b in buildings if not (b.get("_key") == _demand_key(b) and (b.get("_demand") or b.get("_error")))]
     if not stale:
         return
     names = [c for c, _ in CARRIERS]
     with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(stale) * len(names))) as pool:
-        jobs = {(id(b), c): pool.submit(_fetch_carrier, *_demand_key(b), c)
-                for b in stale for c in names}
+        jobs = {(id(b), c): pool.submit(_fetch_carrier, *_demand_key(b), c) for b in stale for c in names}
     for b in stale:
         demand, error = {}, ""
         for c in names:
@@ -1134,8 +894,7 @@ def _load_demands(buildings):
                 demand[c] = jobs[(id(b), c)].result()
             except Exception as exc:
                 error = error or f"{type(exc).__name__}: {exc}"
-        b["_demand"] = None if error else demand
-        b["_error"] = error
+        b["_demand"], b["_error"] = None if error else demand, error
         b["_key"] = _demand_key(b)          # set even on failure: no retry storm
 
 
@@ -1150,9 +909,20 @@ def _avg24_series(series):
     return [sum(series[h::24]) / 365.0 for h in range(24)]
 
 
+def _site_totals(buildings):
+    """(surface, coincident peaks, annual energy, coincident 24 h curves, mean diversity %, coincidence)."""
+    surface = sum(float(b["gfa"] or 0) for b in buildings)
+    peaks = {c: sum(_dv(b, "peak")[c] for b in buildings) for c, _ in CARRIERS}
+    annuals = {c: sum(_dv(b, "annual")[c] for b in buildings) for c, _ in CARRIERS}
+    curves = {c: [sum(_dv(b, "avg24", [0.0] * 24)[c][h] for b in buildings) for h in range(24)] for c, _ in CARRIERS}
+    div = sum(float(b["diversity"] or 0) for b in buildings) / len(buildings) if buildings else 0.0
+    coinc = max(0.0, 1.0 - div / 100.0)
+    return (surface, {c: v * coinc for c, v in peaks.items()}, annuals,     # energy: no coincidence
+            {c: [v * coinc for v in s] for c, s in curves.items()}, div, coinc)
+
+
 def _aggregate_series(buildings):
-    """Site-wide 8760 h demand per carrier [kW]. Buildings whose fetch failed
-    contribute nothing — they're reported separately, not filled in."""
+    """Site-wide 8760 h demand per carrier [kW]. Buildings whose fetch failed contribute nothing."""
     total = {c: [0.0] * 8760 for c, _ in CARRIERS}
     for b in buildings:
         for c, _ in CARRIERS:
@@ -1164,35 +934,23 @@ def _aggregate_series(buildings):
 
 # ------------------------------------------------------- step 1: GIS retrieval
 def _load_site_gis(out, polygon_lonlat):
-    """Ensure the GIS scenario/hub exist, populate them from the drawn polygon,
-    wait for the background job, then return (GIS payload, scenario guid) —
-    step 4 copies that same GIS layer onto every variant scenario."""
-    ring = list(polygon_lonlat)
-    if ring[0] != ring[-1]:
-        ring = ring + [ring[0]]
-
+    """Ensure the GIS scenario/hub exist, populate them from the drawn polygon, wait for the
+    background job, then return (GIS payload, scenario guid)."""
     out.print("Creating GIS hub from the drawn polygon…")
     project_guid = _project()
     out.print(f"  · project '{PROJECT_NAME}': {project_guid}")
-    scenario_guid = _reset_scenario(_analysis(project_guid, GIS_ANALYSIS_NAME),
-                                    GIS_SCENARIO_NAME)
+    scenario_guid = _reset_scenario(_analysis(project_guid, GIS_ANALYSIS_NAME), GIS_SCENARIO_NAME)
     hub_guid = _hub(scenario_guid)
     out.print(f"  · scenario: {scenario_guid}  ·  hub: {hub_guid}")
 
-    job_id = _raw("post", f"{SYMPHENY_BASE_URL}api-services/gis/background/scenarios/"
-                          f"{scenario_guid}/hubs/{hub_guid}?geoadmin=true",
-                  json={"hub_name": HUB_NAME,
-                        "feature": {"type": "Feature",
-                                    "geometry": {"type": "Polygon",
-                                                 "coordinates": [ring]}}}
-                  ).json()["job_id"]
+    job_id = _raw("post", f"{SYMPHENY_BASE_URL}api-services/gis/background/scenarios/{scenario_guid}/hubs/{hub_guid}?geoadmin=true",
+                  json={"hub_name": HUB_NAME, "feature": {"type": "Feature", "geometry": {
+                      "type": "Polygon", "coordinates": [_closed(polygon_lonlat)]}}}).json()["job_id"]
     out.print(f"  · background job {job_id} started")
-
     for i in range(1, GIS_JOB_MAX_ATTEMPTS + 1):
         try:
             jobs = _raw("get", f"{SYMPHENY_BASE_URL}api-services/gis/background").json()
-            if next((x for x in jobs if x.get("job_id") == job_id and x.get("is_done")),
-                    None):
+            if any(x.get("job_id") == job_id and x.get("is_done") for x in jobs):
                 break
         except Exception:
             pass                             # transient poll failure — keep trying
@@ -1200,20 +958,18 @@ def _load_site_gis(out, polygon_lonlat):
             out.print(f"    – waiting for GIS job… {i}s elapsed")
         time.sleep(GIS_JOB_POLL_SECONDS)
     else:
-        raise TimeoutError(f"GIS job {job_id} did not complete within "
-                           f"{GIS_JOB_MAX_ATTEMPTS} seconds")
+        raise TimeoutError(f"GIS job {job_id} did not complete within {GIS_JOB_MAX_ATTEMPTS} seconds")
 
     out.print("  · job complete — fetching GIS data…")
-    data = _raw("get", f"{SYMPHENY_BASE_URL}api-services/gis/scenarios/"
-                       f"{scenario_guid}/hubs/{hub_guid}").json()
-    out.print(f"✓ {len((data.get('building_layer') or {}).get('features', []))} "
-              f"building(s), {len(data.get('addresses') or [])} address(es) loaded.")
+    data = _raw("get", f"{SYMPHENY_BASE_URL}api-services/gis/scenarios/{scenario_guid}/hubs/{hub_guid}").json()
+    out.print(f"✓ {len((data.get('building_layer') or {}).get('features', []))} building(s), "
+              f"{len(data.get('addresses') or [])} address(es) loaded.")
     return data, scenario_guid
 
 
 def _gis_first_building_lonlat(data):
-    """(lon, lat) of the first building — from the address entry if it carries
-    coordinates, else the vertex-average centroid of the first footprint."""
+    """(lon, lat) of the first building — from the address entry if it carries coordinates,
+    else the vertex-average centroid of the first footprint."""
     for a in (data.get("addresses") or [])[:1]:
         lon, lat = a.get("lon", a.get("longitude")), a.get("lat", a.get("latitude"))
         if lon is not None and lat is not None:
@@ -1222,24 +978,20 @@ def _gis_first_building_lonlat(data):
         geom = f.get("geometry") or {}
         coords = geom.get("coordinates") or []
         ring = (coords[0] if coords else []) if geom.get("type") == "Polygon" else (
-            coords[0][0] if geom.get("type") == "MultiPolygon" and coords and coords[0]
-            else [])
+            coords[0][0] if geom.get("type") == "MultiPolygon" and coords and coords[0] else [])
         pts = [p for p in ring if p and p[0] is not None and p[1] is not None]
         if pts:
-            return (sum(p[0] for p in pts) / len(pts),
-                    sum(p[1] for p in pts) / len(pts))
+            return sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
     return None
 
 
 def _gis_total_area(data):
-    """Sum of building_ground_area over the addresses — the same field the
-    demand calls use for GFA. Falls back to the features' properties."""
-    total = sum(float(a.get("building_ground_area") or 0.0)
-                for a in (data.get("addresses") or []))
+    """Sum of building_ground_area over the addresses (the field the demand calls use for GFA),
+    falling back to the features' properties."""
+    total = sum(float(a.get("building_ground_area") or 0.0) for a in (data.get("addresses") or []))
     if total > 0:
         return total
-    return sum(float((f.get("properties") or {}).get("building_ground_area")
-                     or (f.get("properties") or {}).get("area") or 0.0)
+    return sum(float((f.get("properties") or {}).get("building_ground_area") or (f.get("properties") or {}).get("area") or 0.0)
                for f in ((data.get("building_layer") or {}).get("features") or []))
 
 
@@ -1247,8 +999,7 @@ def _fetch_solar_profile(lon, lat, area):
     """8760 h solar profile [kW] for one point + surface area."""
     key = (round(lon, 5), round(lat, 5), round(area, 1))
     if key not in _SOLAR_CACHE:
-        series = _raw("post", f"{SYMPHENY_BASE_URL}api-services/jrc/solar/profile",
-                      json=[{"lon": lon, "lat": lat, "area": area}]).json()
+        series = _raw("post", f"{SYMPHENY_BASE_URL}api-services/jrc/solar/profile", json=[{"lon": lon, "lat": lat, "area": area}]).json()
         if len(series) != 8760:
             raise ValueError(f"solar profile: expected 8760 periods, got {len(series)}")
         _SOLAR_CACHE[key] = series
@@ -1257,12 +1008,10 @@ def _fetch_solar_profile(lon, lat, area):
 
 # --------------------------------------------- step 4: scenario construction
 def _carriers_by_subtype(scenario_guid):
-    """subtypeKey -> energyCarrierGuid for everything already in the scenario.
-    Imported technologies name theirs "HEAT_4@tp=25447" — the subtype is the
-    part before the "@". First one wins."""
+    """subtypeKey -> energyCarrierGuid for everything already in the scenario. Imported
+    technologies name theirs "HEAT_4@tp=25447" — the subtype is the part before "@". First wins."""
     found = {}
-    for c in (_d("get", f"{BE_URL}scenarios/{scenario_guid}/carriers")
-              or {}).get("energyCarriers", []) or []:
+    for c in (_d("get", f"{BE_URL}scenarios/{scenario_guid}/carriers") or {}).get("energyCarriers", []) or []:
         key = (c.get("subtypeKey") or "").upper().split("@")[0].strip()
         if key:
             found.setdefault(key, c["energyCarrierGuid"])
@@ -1272,54 +1021,44 @@ def _carriers_by_subtype(scenario_guid):
 def _upload_profile(scenario_guid, name, series):
     """The endpoint wants exactly 8760 entries, periods 1..8760, positive."""
     return _d("post", f"{BE_URL}scenarios/{scenario_guid}/profiles-json",
-              json={"name": name,
-                    "values": [{"period": i + 1, "demandValue": round(max(0.0, v), 6)}
-                               for i, v in enumerate(series)]})["id"]
+              json={"name": name, "values": [{"period": i + 1, "demandValue": round(max(0.0, v), 6)}
+                                             for i, v in enumerate(series)]})["id"]
 
 
 def _populate_scenario(out, scenario_guid, agg, var, guid_of, solar_series, solar_area):
-    """Hub + stage + technologies first (so the carriers they bring in can be
-    reused), then the solar on-site resource, then the demands."""
+    """Hub + stage + technologies first (so the carriers they bring in can be reused), then the
+    solar on-site resource, then the demands."""
     hub_guid, stage_guid = _hub(scenario_guid), _stage(scenario_guid)
-
     guids, unmapped = [], []
     for t in var["techs"]:
         guid = guid_of.get(APP_TO_DB.get(t, ""))
         guids.append(guid) if guid else unmapped.append(t)
-    status = _req("post", f"{BE_URL}scenarios/{scenario_guid}/hubs/{hub_guid}"
-                          f"/import-database-technology-package?technologiesOptional=true",
+    status = _req("post", f"{BE_URL}scenarios/{scenario_guid}/hubs/{hub_guid}/import-database-technology-package?technologiesOptional=true",
                   json={"conversionTechGuids": guids}).status_code if guids else None
-    out.print(f"    – technologies: {len(guids)} imported" +
-              (f" (HTTP {status})" if status is not None else " — nothing to import"))
+    out.print(f"    – technologies: {len(guids)} imported" + (f" (HTTP {status})" if status is not None else " — nothing to import"))
     if unmapped:
         out.print(f"    ⚠ no database match for: {', '.join(unmapped)}")
-
     existing = _carriers_by_subtype(scenario_guid)
-    out.print(f"    – carriers in scenario after import: "
-              f"{', '.join(sorted(existing)) or 'none'}")
+    out.print(f"    – carriers in scenario after import: {', '.join(sorted(existing)) or 'none'}")
 
     if "Solar PV" in var["techs"]:
         resource_guid = existing.get(SOLAR_RESOURCE_SUBTYPE)
         if not solar_series or max(solar_series) <= 0:
-            out.print("    ⚠ Solar PV selected but no site solar profile is available "
-                      "— load GIS data in step 1 first. Skipping on-site resource.")
+            out.print("    ⚠ Solar PV selected but no site solar profile is available — load GIS data in step 1 first. "
+                      "Skipping on-site resource.")
         elif not resource_guid:
-            out.print(f"    ⚠ Solar PV selected but no {SOLAR_RESOURCE_SUBTYPE} carrier "
-                      f"was created by the import — skipping on-site resource.")
+            out.print(f"    ⚠ Solar PV selected but no {SOLAR_RESOURCE_SUBTYPE} carrier was created by the import — "
+                      f"skipping on-site resource.")
         else:
-            # `area` is reported as an "Area"-type available resource, so it must
-            # be the same m² the JRC profile itself was fetched for.
-            pid = _upload_profile(scenario_guid, "Solar irradiance – site total",
-                                  solar_series)
+            # `area` is an "Area"-type available resource: the same m² the JRC profile was fetched for.
+            pid = _upload_profile(scenario_guid, "Solar irradiance – site total", solar_series)
             guid = _d("post", f"{BE_URL}v2_1/scenarios/{scenario_guid}/solar-on-site-resource",
-                      json={"name": "Solar irradiance – site total",
-                            "energyCarrierGuid": resource_guid,
-                            "hubs": [{"hubGuid": hub_guid,
-                                      "availableSolarCollectorArea": solar_area or 0.0,
+                      json={"name": "Solar irradiance – site total", "energyCarrierGuid": resource_guid,
+                            "hubs": [{"hubGuid": hub_guid, "availableSolarCollectorArea": solar_area or 0.0,
                                       "availableResourceType": "Area"}],
                             "profileId": pid, "stages": [stage_guid]})["solarResourceGuid"]
-            out.print(f"    – solar on-site resource (reused {SOLAR_RESOURCE_SUBTYPE} "
-                      f"carrier): {solar_area or 0.0:,.0f} m² · profile #{pid} · {guid}")
+            out.print(f"    – solar on-site resource (reused {SOLAR_RESOURCE_SUBTYPE} carrier): "
+                      f"{solar_area or 0.0:,.0f} m² · profile #{pid} · {guid}")
 
     for carrier, _color in CARRIERS:
         series = agg.get(carrier) or []
@@ -1327,86 +1066,65 @@ def _populate_scenario(out, scenario_guid, agg, var, guid_of, solar_series, sola
             out.print(f"    – {carrier}: no demand, skipped")
             continue
         subtype = CARRIER_SUBTYPE[carrier]
-        carrier_guid = existing.get(subtype)
-        origin = f"reused {subtype}"
+        carrier_guid, origin = existing.get(subtype), f"reused {subtype}"
         if not carrier_guid:
             carrier_guid = _d("post", f"{BE_URL}v2/scenarios/{scenario_guid}/carriers",
-                              json={"energyCarrierName": CARRIER_FULL_NAME[carrier],
-                                    "subType": subtype,
-                                    "colorHexCode": CARRIER_COLOR[carrier]}
-                              )["energyCarrierGuid"]
-            existing[subtype] = carrier_guid
-            origin = f"created {subtype}"
-        pid = _upload_profile(scenario_guid,
-                              f"{CARRIER_FULL_NAME[carrier]} – site total", series)
+                              json={"energyCarrierName": CARRIER_FULL_NAME[carrier], "subType": subtype,
+                                    "colorHexCode": CARRIER_COLOR[carrier]})["energyCarrierGuid"]
+            existing[subtype], origin = carrier_guid, f"created {subtype}"
+        pid = _upload_profile(scenario_guid, f"{CARRIER_FULL_NAME[carrier]} – site total", series)
         _d("post", f"{BE_URL}v2_1/scenarios/{scenario_guid}/energy-demands",
-           json={"name": f"{CARRIER_FULL_NAME[carrier]} demand", "hubGuids": [hub_guid],
-                 "energyCarrierGuid": carrier_guid, "demandProfileId": pid,
-                 "demandScalingFactor": 1, "stages": [stage_guid]})
-        out.print(f"    – {carrier} ({origin}): {sum(series) / 1000:,.0f} MWh/y · "
-                  f"peak {max(series):,.0f} kW · profile #{pid}")
+           json={"name": f"{CARRIER_FULL_NAME[carrier]} demand", "hubGuids": [hub_guid], "energyCarrierGuid": carrier_guid,
+                 "demandProfileId": pid, "demandScalingFactor": 1, "stages": [stage_guid]})
+        out.print(f"    – {carrier} ({origin}): {sum(series) / 1000:,.0f} MWh/y · peak {max(series):,.0f} kW · profile #{pid}")
 
 
-def _create_variant_scenario(out, analysis_guid, var, agg, guid_of,
-                             gis_scenario_guid=None, solar_series=None, solar_area=None):
+def _create_variant_scenario(out, analysis_guid, var, agg, guid_of, gis_scenario_guid=None, solar_series=None, solar_area=None):
     """One scenario per variant. Returns (guid, frontend URL)."""
     scenario_guid = _create_scenario(analysis_guid, var["name"])
     # Populate first: the GIS copy below needs this scenario's own hub.
     _populate_scenario(out, scenario_guid, agg, var, guid_of, solar_series, solar_area)
-
     if gis_scenario_guid:
         try:
-            _raw("put", f"{BE_URL}scenarios/copy/{gis_scenario_guid}/gis",
-                 params={"scenarioGuidTo": scenario_guid})
+            _raw("put", f"{BE_URL}scenarios/copy/{gis_scenario_guid}/gis", params={"scenarioGuidTo": scenario_guid})
             out.print(f"    – GIS data copied from site scenario {gis_scenario_guid}")
         except Exception as exc:
             out.print(f"    ⚠ GIS copy failed: {type(exc).__name__}: {exc}")
     else:
         out.print("    – no GIS data loaded in step 1, skipping GIS copy")
 
-    # Electricity import/export, if this scenario ended up with an ELECTRICITY
-    # carrier at all — it may come from the import (a heat pump's input) or from
-    # the demands, so it's re-read rather than assumed.
+    # Electricity import/export, if the scenario ended up with an ELECTRICITY carrier at all — it may
+    # come from the import (a heat pump's input) or from the demands, so it's re-read rather than assumed.
     subtype = CARRIER_SUBTYPE["Elec"]
     elec_guid = _carriers_by_subtype(scenario_guid).get(subtype)
     if elec_guid:
         hub_guid, stage_guid = _hub(scenario_guid), _stage(scenario_guid)
         for kind, price in IMPEX_ELEC_PRICE.items():
             _d("post", f"{BE_URL}v2_1/scenario/{scenario_guid}/impex",
-               json={"name": f"Electricity {kind.lower()}",
-                     "energyCarrierGuid": elec_guid, "type": kind,
-                     "hubs": [{"hubGuid": hub_guid}], "energyPriceCHFkWh": price,
-                     "stages": [stage_guid]})
-        out.print(f"    – electricity import @ {IMPEX_ELEC_PRICE['IMPORT']:,.0f} · "
-                  f"export @ {IMPEX_ELEC_PRICE['EXPORT']:,.0f} CHF/kWh")
+               json={"name": f"Electricity {kind.lower()}", "energyCarrierGuid": elec_guid, "type": kind,
+                     "hubs": [{"hubGuid": hub_guid}], "energyPriceCHFkWh": price, "stages": [stage_guid]})
+        out.print(f"    – electricity import @ {IMPEX_ELEC_PRICE['IMPORT']:,.0f} · export @ {IMPEX_ELEC_PRICE['EXPORT']:,.0f} CHF/kWh")
     else:
         out.print(f"    – no {subtype} carrier, skipping import/export")
 
-    # Everything is in place — close the diagram last. Note this one endpoint
-    # lives under SYMPHENY_BASE_URL, not BE_URL.
-    resp = _req("put", f"{SYMPHENY_BASE_URL}sympheny-app/scenarios/{scenario_guid}"
-                       f"/close-diagram", data=None)
+    # Everything is in place — close the diagram last. This endpoint lives under SYMPHENY_BASE_URL, not BE_URL.
+    resp = _req("put", f"{SYMPHENY_BASE_URL}sympheny-app/scenarios/{scenario_guid}/close-diagram", data=None)
     if resp.status_code != 200:
         raise RuntimeError(f"close-diagram returned HTTP {resp.status_code}")
     out.print("    – diagram closed")
-    return scenario_guid, _d("get", f"{BE_URL}scenario/{scenario_guid}/frontend-url"
-                             )["frontendUrl"]
+    return scenario_guid, _d("get", f"{BE_URL}scenario/{scenario_guid}/frontend-url")["frontendUrl"]
 
 
 def _solve(out, analysis_guid, scenario_guid, scenario_name):
     """Queue an optimisation, wait for it, and return the dashboard URL."""
     resp = _req("post", f"{SYMPHENY_BASE_URL}sense-api/ext/solver/jobs",
-                json=[dict(SOLVER, objective1=SOLVER_OBJECTIVE,
-                           scenarioGuid=scenario_guid, scenarioName=scenario_name)])
+                json=[dict(SOLVER, objective1=SOLVER_OBJECTIVE, scenarioGuid=scenario_guid, scenarioName=scenario_name)])
     if resp.status_code != 200:
         raise RuntimeError(f"solver job returned HTTP {resp.status_code}")
-
     job_id = None
     for i in range(max(1, SOLVER_WAIT_SECONDS // SOLVER_POLL_SECONDS)):
-        jobs = [j for j in _raw("post", f"{SYMPHENY_BASE_URL}sense-api/ext/solver/jobs/"
-                                        f"get-scenarios",
-                                json={"scenarioGuids": [scenario_guid],
-                                      "limit": SOLVER_WAIT_SECONDS}).json()
+        jobs = [j for j in _raw("post", f"{SYMPHENY_BASE_URL}sense-api/ext/solver/jobs/get-scenarios",
+                                json={"scenarioGuids": [scenario_guid], "limit": SOLVER_WAIT_SECONDS}).json()
                 if j["scenarioGuid"] == scenario_guid]
         if jobs and all(j["terminated"] for j in jobs):
             job_id = jobs[0]["id"]
@@ -1415,31 +1133,25 @@ def _solve(out, analysis_guid, scenario_guid, scenario_name):
         time.sleep(SOLVER_POLL_SECONDS)
     if job_id is None:
         raise TimeoutError(f"solver job did not finish within {SOLVER_WAIT_SECONDS}s")
-
     domain = "app.dev.sympheny.com" if "dev" in BE_URL else "app.sympheny.com"
     project_guid = _d("get", f"{BE_URL}analysis/{analysis_guid}")["projectGuid"]
-    return (f"https://{domain}/projects/{project_guid}/analysis/{analysis_guid}"
-            f"/execution/{job_id}/solution/1")
+    return f"https://{domain}/projects/{project_guid}/analysis/{analysis_guid}/execution/{job_id}/solution/1"
 
 
 def _work_submit(out, buildings, variants, site):
     """Create one Sympheny scenario per variant, then solve the first one."""
-    out.print(f"Creating {len(variants)} scenario(s) from {len(buildings)} "
-              f"building type(s)…")
+    out.print(f"Creating {len(variants)} scenario(s) from {len(buildings)} building type(s)…")
     agg = _aggregate_series(buildings)
     skipped = [b["name"] for b in buildings if b.get("_error")]
     if skipped:
-        out.print(f"  ⚠ excluded from the aggregate (no demand data): "
-                  f"{', '.join(skipped)}")
+        out.print(f"  ⚠ excluded from the aggregate (no demand data): {', '.join(skipped)}")
     if all(max(s) <= 0 for s in agg.values()):
         return out.print("✗ no demand data at all — go back to step 2 and fix the errors.")
-
     try:
-        guid_of = {it["technologyName"]: it["conversionTechGuid"] for it in
-                   _d("get", f"{BE_URL}conversion-technologies/profile-types/database")}
+        guid_of = {it["technologyName"]: it["conversionTechGuid"]
+                   for it in _d("get", f"{BE_URL}conversion-technologies/profile-types/database")}
         out.print(f"  · database technologies: {len(guid_of)}")
-        # Reuse the project — the step-1 GIS scenario lives in it and must
-        # survive a submit. Only the variants' own analysis is reset.
+        # Reuse the project (the step-1 GIS scenario lives in it); only the variants' own analysis is reset.
         project_guid = _project()
         out.print(f"  · project '{PROJECT_NAME}': {project_guid}")
         analysis_guid = _reset_analysis(project_guid, PROJECT_NAME)
@@ -1456,7 +1168,6 @@ def _work_submit(out, buildings, variants, site):
                 site.get("solar_series"), site.get("solar_area")))
         except Exception as exc:
             out.print(f"    ✗ {type(exc).__name__}: {exc}")
-
     if not created:
         return out.print("✗ no scenario was created.")
     name, scenario_guid, url = created[0]
