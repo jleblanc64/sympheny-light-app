@@ -30,6 +30,7 @@ from ipystream.voila.utils_tdqm import tqdm_out
 from ipystream.voila.utils_browser_ready import on_browser_ready
 
 from utils_login import get_creds_from_token
+from utils_token import token_to_user
 
 CONTENT_MIN_PX = 560
 CHART_PREVIEW_PX, CHART_PREVIEW_W, CHART_COMBINED_PX, CHART_SOLAR_PX = 120, 470, 150, 175
@@ -732,6 +733,12 @@ def _authenticate():
     creds = get_creds_from_token(get_token())
     _HEADERS, SYMPHENY_BASE_URL, BE_URL = creds["h"], creds["base_url"], creds["be"]
     utils_log.log(SYMPHENY_BASE_URL)
+
+    # get logged username
+    h = creds["h"]
+    jwt = (h.get("authorization") or h.get("Authorization")).split(" ", 1)[-1]
+    username = token_to_user(jwt)
+    utils_log.log(username)
 
 
 def _req(method, url, **kw):
