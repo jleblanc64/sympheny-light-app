@@ -15,30 +15,17 @@ base_url = "https://eu-north-1-api.sympheny.com/"
 os.environ[OS_JWT_OVERRIDE] = r.post(f"{base_url}backoffice/auth/ext/token",
                                      json={"email": username, "password": password}).json()["access_token"]
 
-_KILL_TREE = r"""
-kill_tree() {
-    for child in $(pgrep -P "$1" 2>/dev/null); do
-        kill_tree "$child"
-    done
-    kill -9 "$1" 2>/dev/null
-}
+SCRIPT = r'''
+for pid in $(pgrep -f light-app-from-editor); do
+  ppid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+  echo "killing kernel $pid (parent $ppid)"
+  [ "$ppid" -gt 1 ] && kill -9 "$ppid" 2>/dev/null
+  kill -9 "$pid" 2>/dev/null
+done
+exit 0
+'''
 
-PIDS=$(ps -eo pid,args \
-    | grep -E '[p]ython3?( -[^ ]+)* .*(^| )(app|app_dev)\.py( |$)' \
-    | awk -v self="$SELF" -v parent="$PARENT" '$1 != self && $1 != parent {print $1}')
+result = subprocess.run(["bash", "-c", SCRIPT], capture_output=True, text=True)
+print(result.stdout, result.stderr)
 
-if [ -n "$PIDS" ]; then
-    echo "Found existing process(es): $PIDS. Killing processes and kernels..."
-    for PID in $PIDS; do
-        kill_tree "$PID"
-    done
-fi
-"""
-
-subprocess.run(
-    _KILL_TREE,
-    shell=True,
-    executable="/bin/bash",
-    env={**os.environ, "SELF": str(os.getpid()), "PARENT": str(os.getppid())},
-)
-ipystream.run(use_xpython=False, show_logo=False, port=port, disable_extensions=True)
+ipystream.run(tag="light-app-from-editor", use_xpython=False, show_logo=False, port=port, disable_extensions=True)
