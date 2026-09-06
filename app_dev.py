@@ -49,7 +49,7 @@ done
 exit 0
 '''
 
-tag = "light-app-from-editor"
+tag = "light-app-"
 result = subprocess.run(["bash", "-c", SCRIPT], capture_output=True, text=True,
                         env={**os.environ, "PATTERN": tag})
 print(result.stdout, result.stderr)
