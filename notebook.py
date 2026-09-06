@@ -14,6 +14,7 @@
 UI first, then every backend call under the "## BACKEND API CALLS" banner.
 """
 import time
+from html import escape
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
@@ -42,7 +43,7 @@ WZ_CSS = """
 :root{--teal:#0f9d8f;--ink:#1f2933;--muted:#8a94a0;--line:#e3e8ee;--deep:#0b5f57;--red:#b3312c}
 [class*="wz-"]:not(button),[class*="wz-"] :is(div,span,p,li,th,td,label,pre,h1,h2,h3,h4){color:var(--c,inherit) !important}
 /*base*/ [class*="wz-"]{font-family:sans-serif}.wz-cat,.wz-kpi,.wz-tot,.wz-tag,.wz-err,.wz-band h4{font-family:monospace}.wz-caption,.wz-sub,.wz-cat,.wz-kpi .sub,.wz-sum td.k,.wz-tech-sub,.wz-loader{--c:var(--muted)}.wz-title,.wz-kpi .val,.wz-sum td.v,.wz-tot,.wz-tech-name,.wz-modal-title{--c:var(--ink)}.wz-kpi,.wz-side,.wz-sum,.wz-loader,.wz-err{border:1px solid var(--line);border-radius:10px;background:#fff}
-/*nav*/ .wz-nav{--c:#dbe3ec;background:#1b2534 !important;border-radius:10px;padding:0 14px;height:56px;display:flex;align-items:center;gap:4px;margin:0 0 14px}.wz-nav .crumb{display:flex;align-items:center;gap:9px;padding:7px 14px;font-size:14px;border-radius:20px}.wz-nav .crumb.done{--c:#f0f4f8}.wz-nav .crumb.active{--c:#fff;font-weight:700;background:rgba(255,255,255,.14)}.wz-nav .sep{--c:#9aa7b8;font-size:13px;padding:0 2px}.wz-nav .dot{--c:#fff;flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#5a6a7e;font-size:12px;font-weight:700}.wz-nav .crumb.done .dot{background:var(--teal)}.wz-nav .crumb.active .dot{background:var(--teal);box-shadow:0 0 0 3px #0f9d8f55}
+/*nav*/ .wz-nav{--c:#dbe3ec;background:#1b2534 !important;border-radius:10px;padding:0 14px;height:56px;display:flex;align-items:center;gap:4px;margin:0 0 14px}.wz-nav .crumb{display:flex;align-items:center;gap:9px;padding:7px 14px;font-size:14px;border-radius:20px}.wz-nav .crumb.done{--c:#f0f4f8}.wz-nav .crumb.active{--c:#fff;font-weight:700;background:rgba(255,255,255,.14)}.wz-nav .sep{--c:#9aa7b8;font-size:13px;padding:0 2px}.wz-nav .dot{--c:#fff;flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#5a6a7e;font-size:12px;font-weight:700}.wz-nav .crumb.done .dot{background:var(--teal)}.wz-nav .crumb.active .dot{background:var(--teal);box-shadow:0 0 0 3px #0f9d8f55}.wz-nav .user{--c:#dbe3ec;margin-left:auto;padding:0 2px;font-size:12px;white-space:nowrap}.wz-nav .user b{--c:#fff;font-weight:600}
 /*text*/ .wz-title{font-size:15px;font-weight:600;margin:0 0 8px}.wz-caption{font-size:11px;margin:1px 0 6px 2px}.wz-sub{font-size:11px;margin:-6px 0 5px 26px}.wz-cat{font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin:9px 0 3px}.wz-label{--c:#4a5568;font-size:11px;margin:0 0 3px 2px}
 /*kpi*/ .wz-kpi{padding:8px 14px;min-width:118px}.wz-kpi .lab{font-size:10px;letter-spacing:.08em;text-transform:uppercase}.wz-kpi .val{font-size:21px;font-weight:700;line-height:1.25}.wz-kpi .sub{font-size:10px}.wz-row{display:flex;gap:10px;flex-wrap:wrap;margin:2px 0}
 /*band+side*/ .wz-band{background:#f3faf9;border:1px solid #d9ece9;border-radius:10px;padding:10px 14px;margin:6px 0 4px}.wz-band h4,.wz-sum h3{--c:var(--deep);text-transform:uppercase}.wz-band h4{margin:0 0 7px;font-size:11px;letter-spacing:.1em}.wz-side{padding:8px 12px;background:#fafbfc}.wz-tot{font-size:12px;line-height:1.8}.wz-tot span{float:right;font-weight:700}
@@ -138,13 +139,14 @@ def _kpi(label, value, sub, color):
             f"<div class='val'>{value}</div><div class='sub'>{sub}</div></div>")
 
 
-def _render_nav_html(active):
+def _render_nav_html(active, username=""):
     parts = []
     for i, (num, label) in enumerate(STEP_DEFS):
         cls = "active" if i == active else ("done" if i < active else "")
         parts.append(f"<div class='crumb {cls}'><div class='dot'>{'✓' if i < active else num}</div><span>{label}</span></div>")
     sep = "<div class='sep'>▸</div>"
-    return f"<div class='wz-nav'>{sep.join(parts)}</div>"
+    user_html = f"<div class='user'>Logged in as <b>{escape(username)}</b></div>" if username else ""
+    return f"<div class='wz-nav'>{sep.join(parts)}{user_html}</div>"
 
 
 def _profile_fig(curves, title, height, width=None):
@@ -665,7 +667,7 @@ def run():
 
         def go_to(index):
             index = max(0, min(len(STEP_DEFS) - 1, index))
-            nav_widget.value = _render_nav_html(index)
+            nav_widget.value = _render_nav_html(index, LOGGED_USERNAME)
             btn_prev.layout.visibility = "hidden" if index == 0 else "visible"
             content_area.children = [_loading_html("LOADING DEMANDS FROM SYMPHENY BACKEND …", big=True) if index == 1
                                      else _loading_html()]
@@ -723,13 +725,13 @@ APP_TO_DB = {                 # app label -> Sympheny database technology name
     "CHP unit": "Gas CHP (Linearized cost)",
 }
 
-_HEADERS, SYMPHENY_BASE_URL, BE_URL = {}, None, None
+_HEADERS, SYMPHENY_BASE_URL, BE_URL, LOGGED_USERNAME = {}, None, None, ""
 _DEMAND_CACHE, _SOLAR_CACHE = {}, {}
 
 
 def _authenticate():
     """Read the kernel token once and build the auth header for every call."""
-    global _HEADERS, SYMPHENY_BASE_URL, BE_URL
+    global _HEADERS, SYMPHENY_BASE_URL, BE_URL, LOGGED_USERNAME
     creds = get_creds_from_token(get_token())
     _HEADERS, SYMPHENY_BASE_URL, BE_URL = creds["h"], creds["base_url"], creds["be"]
     utils_log.log(SYMPHENY_BASE_URL)
@@ -737,8 +739,8 @@ def _authenticate():
     # get logged username
     h = creds["h"]
     jwt = (h.get("authorization") or h.get("Authorization")).split(" ", 1)[-1]
-    username = token_to_user(jwt)
-    utils_log.log(username)
+    LOGGED_USERNAME = token_to_user(jwt) or ""
+    utils_log.log(LOGGED_USERNAME)
 
 
 def _req(method, url, **kw):
