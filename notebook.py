@@ -36,73 +36,22 @@ CHART_PREVIEW_PX, CHART_PREVIEW_W, CHART_COMBINED_PX, CHART_SOLAR_PX = 120, 470,
 STEP_DEFS = [("1", "Site location"), ("2", "Site & buildings"), ("3", "System variants"), ("4", "Summary")]
 TEAL, INK, MUTED, LINE = "#0f9d8f", "#1f2933", "#8a94a0", "#e3e8ee"
 
-# Displayed once by run(). Voila ships `label,div,span,p,li,th,td,pre{color:black!important}`,
-# so every colour carries !important. The .widget-*/button rules fight ipywidgets' stylesheet.
 WZ_CSS = """
 <style>
-:root{--teal:#0f9d8f;--ink:#1f2933;--muted:#8a94a0;--line:#e3e8ee;--deep:#0b5f57}
-.wz-nav{background:#1b2534 !important;border-radius:10px;padding:0 14px;height:56px;display:flex;align-items:center;gap:4px;font-family:sans-serif;margin:0 0 14px}
-.wz-nav *{font-family:sans-serif}
-.wz-nav .crumb{display:flex;align-items:center;gap:9px;padding:7px 14px;font-size:14px;border-radius:20px;color:#dbe3ec !important}
-.wz-nav .crumb span{color:inherit !important}
-.wz-nav .crumb.active{color:#fff !important;font-weight:700;background:rgba(255,255,255,.14)}
-.wz-nav .crumb.done{color:#f0f4f8 !important}
-.wz-nav .dot{width:24px;height:24px;border-radius:50%;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;background:#5a6a7e;color:#fff !important;flex:0 0 24px}
-.wz-nav .crumb.active .dot{background:var(--teal);box-shadow:0 0 0 3px #0f9d8f55}
-.wz-nav .crumb.done .dot{background:var(--teal)}
-.wz-nav .sep{color:#9aa7b8 !important;font-size:13px;padding:0 2px}
-.wz-title{font-size:15px;font-weight:600;color:var(--ink) !important;margin:0 0 8px;font-family:sans-serif}
-.wz-caption,.wz-sub,.wz-cat,.wz-kpi .sub,.wz-sum td.k{color:var(--muted) !important}
-.wz-caption{font-size:11px;margin:1px 0 6px 2px;font-family:sans-serif}
-.wz-sub{font-size:11px;margin:-6px 0 5px 26px;font-family:sans-serif}
-.wz-cat{font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin:9px 0 3px;font-family:monospace}
-.wz-label{font-size:11px;color:#4a5568 !important;margin:0 0 3px 2px;font-family:sans-serif}
-.wz-kpi,.wz-side,.wz-sum,.wz-loader,.wz-err{border:1px solid var(--line);border-radius:10px;background:#fff}
-.wz-kpi{padding:8px 14px;min-width:118px;font-family:monospace}
-.wz-kpi .lab{font-size:10px;letter-spacing:.08em;text-transform:uppercase}
-.wz-kpi .val,.wz-sum td.v{color:var(--ink) !important}
-.wz-kpi .val{font-size:21px;font-weight:700;line-height:1.25}
-.wz-kpi .sub{font-size:10px}
-.wz-row{display:flex;gap:10px;flex-wrap:wrap;margin:2px 0}
-.wz-band{background:#f3faf9;border:1px solid #d9ece9;border-radius:10px;padding:10px 14px;margin:6px 0 4px}
-.wz-band h4,.wz-sum h3{color:var(--deep) !important;text-transform:uppercase}
-.wz-band h4{margin:0 0 7px;font-size:11px;letter-spacing:.1em;font-family:monospace}
-.wz-side{padding:8px 12px;background:#fafbfc}
-.wz-tot{font-size:12px;font-family:monospace;line-height:1.8;color:var(--ink) !important}
-.wz-tot span{float:right;font-weight:700}
-.wz-sum{padding:14px 18px;border-radius:12px;margin:0 0 12px;font-family:sans-serif}
-.wz-sum h3{margin:0 0 8px;font-size:12px;letter-spacing:.08em}
-.wz-sum table{border-collapse:collapse;width:100%;font-size:13px}
-.wz-sum td{padding:5px 8px;border-bottom:1px solid #f0f2f5;vertical-align:top}
-.wz-sum td.k{width:190px}
-.wz-sum td.v{font-weight:600}
-.wz-chip{display:inline-block;padding:2px 9px;border-radius:11px;font-size:11px;font-weight:600;margin:2px 6px 2px 0}
-.wz-tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.06em;font-family:monospace;vertical-align:middle}
-.wz-tag.err{background:#fdecec;color:#b3312c !important;border:1px solid #f4c9c7}
-.wz-tech-name{font-size:13px;font-weight:600;color:var(--ink) !important;font-family:sans-serif;line-height:1.25}
-.wz-tech-sub{font-size:11px;color:var(--muted) !important;font-family:sans-serif}
-@keyframes wz-spin{to{transform:rotate(360deg)}}
-.wz-loader{display:flex;align-items:center;justify-content:center;gap:10px;border-style:dashed;background:#fcfdfe;font-family:sans-serif;font-size:11px;color:var(--muted) !important}
-.wz-loader .ring{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--teal);animation:wz-spin .8s linear infinite;flex:0 0 20px}
-.wz-err{border-color:#f4c9c7;background:#fdecec;padding:8px 12px;font-family:monospace;font-size:11px;color:#b3312c !important;margin:4px 0}
-.widget-text input[type="text"],.widget-text input[type="number"],.widget-dropdown > select{border:1px solid #d7dde5 !important;border-radius:8px !important;height:32px !important;padding:2px 10px !important;font-size:13px !important;color:var(--ink) !important;background:#fff !important;box-shadow:none !important}
-.widget-text input:focus,.widget-dropdown > select:focus{border-color:var(--teal) !important;outline:none !important;box-shadow:0 0 0 2px #0f9d8f22 !important}
-button.jupyter-button{border-radius:8px !important;box-shadow:none !important;font-family:sans-serif !important;font-size:13px !important;border:1px solid #d7dde5 !important}
-button.jupyter-button:hover{filter:brightness(.97)}
-button.jupyter-button.wz-pill{border-radius:20px !important;font-weight:600 !important;height:36px !important}
-button.jupyter-button.wz-primary{background:var(--teal) !important;color:#fff !important;border-color:var(--teal) !important}
-button.jupyter-button.wz-ghost{background:#fff !important;color:var(--ink) !important}
-button.jupyter-button.wz-chipbtn{height:30px !important;border-radius:7px !important;font-family:monospace !important}
-button.jupyter-button.wz-listitem,button.jupyter-button.wz-pick{border-radius:9px !important;justify-content:flex-start !important;text-align:left !important;font-size:13px !important}
-button.jupyter-button.wz-pick{border:1px solid var(--line) !important;background:#fff !important;border-radius:10px !important;color:var(--ink) !important}
-button.jupyter-button.wz-pick:hover{border-color:var(--teal) !important;background:#f3faf9 !important}
-button.jupyter-button.wz-addtech{border:1px dashed #cbd3dd !important;background:#fff !important;color:var(--muted) !important;border-radius:10px !important;font-size:12px !important}
-button.jupyter-button.wz-addtech:hover{border-color:var(--teal) !important;color:var(--teal) !important}
-button.jupyter-button.wz-x{background:transparent !important;border:none !important;color:var(--muted) !important;font-size:14px !important;border-radius:50% !important}
-button.jupyter-button.wz-x:hover{background:#f2f4f7 !important;color:#e0524d !important}
-.wz-modal{position:fixed !important;top:0;left:0;right:0;bottom:0;background:rgba(17,25,36,.45);z-index:9999;align-items:center !important;justify-content:center !important}
-.wz-modal-card{background:#fff !important;border-radius:14px !important;padding:18px 20px !important;width:520px !important;max-height:74vh !important;overflow:auto !important;box-shadow:0 18px 50px rgba(0,0,0,.28) !important}
-.wz-modal-title{font-size:15px;font-weight:700;color:var(--ink) !important;font-family:sans-serif;margin:0 0 2px}
+:root{--teal:#0f9d8f;--ink:#1f2933;--muted:#8a94a0;--line:#e3e8ee;--deep:#0b5f57;--red:#b3312c}
+[class*="wz-"]:not(button),[class*="wz-"] :is(div,span,p,li,th,td,label,pre,h1,h2,h3,h4){color:var(--c,inherit) !important}
+/*base*/ [class*="wz-"]{font-family:sans-serif}.wz-cat,.wz-kpi,.wz-tot,.wz-tag,.wz-err,.wz-band h4{font-family:monospace}.wz-caption,.wz-sub,.wz-cat,.wz-kpi .sub,.wz-sum td.k,.wz-tech-sub,.wz-loader{--c:var(--muted)}.wz-title,.wz-kpi .val,.wz-sum td.v,.wz-tot,.wz-tech-name,.wz-modal-title{--c:var(--ink)}.wz-kpi,.wz-side,.wz-sum,.wz-loader,.wz-err{border:1px solid var(--line);border-radius:10px;background:#fff}
+/*nav*/ .wz-nav{--c:#dbe3ec;background:#1b2534 !important;border-radius:10px;padding:0 14px;height:56px;display:flex;align-items:center;gap:4px;margin:0 0 14px}.wz-nav .crumb{display:flex;align-items:center;gap:9px;padding:7px 14px;font-size:14px;border-radius:20px}.wz-nav .crumb.done{--c:#f0f4f8}.wz-nav .crumb.active{--c:#fff;font-weight:700;background:rgba(255,255,255,.14)}.wz-nav .sep{--c:#9aa7b8;font-size:13px;padding:0 2px}.wz-nav .dot{--c:#fff;flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#5a6a7e;font-size:12px;font-weight:700}.wz-nav .crumb.done .dot{background:var(--teal)}.wz-nav .crumb.active .dot{background:var(--teal);box-shadow:0 0 0 3px #0f9d8f55}
+/*text*/ .wz-title{font-size:15px;font-weight:600;margin:0 0 8px}.wz-caption{font-size:11px;margin:1px 0 6px 2px}.wz-sub{font-size:11px;margin:-6px 0 5px 26px}.wz-cat{font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin:9px 0 3px}.wz-label{--c:#4a5568;font-size:11px;margin:0 0 3px 2px}
+/*kpi*/ .wz-kpi{padding:8px 14px;min-width:118px}.wz-kpi .lab{font-size:10px;letter-spacing:.08em;text-transform:uppercase}.wz-kpi .val{font-size:21px;font-weight:700;line-height:1.25}.wz-kpi .sub{font-size:10px}.wz-row{display:flex;gap:10px;flex-wrap:wrap;margin:2px 0}
+/*band+side*/ .wz-band{background:#f3faf9;border:1px solid #d9ece9;border-radius:10px;padding:10px 14px;margin:6px 0 4px}.wz-band h4,.wz-sum h3{--c:var(--deep);text-transform:uppercase}.wz-band h4{margin:0 0 7px;font-size:11px;letter-spacing:.1em}.wz-side{padding:8px 12px;background:#fafbfc}.wz-tot{font-size:12px;line-height:1.8}.wz-tot span{float:right;font-weight:700}
+/*summary*/ .wz-sum{padding:14px 18px;border-radius:12px;margin:0 0 12px}.wz-sum h3{margin:0 0 8px;font-size:12px;letter-spacing:.08em}.wz-sum table{border-collapse:collapse;width:100%;font-size:13px}.wz-sum td{padding:5px 8px;border-bottom:1px solid #f0f2f5;vertical-align:top}.wz-sum td.k{width:190px}.wz-sum td.v{font-weight:600}
+/*chips+tech*/ .wz-chip{display:inline-block;padding:2px 9px;border-radius:11px;font-size:11px;font-weight:600;margin:2px 6px 2px 0}.wz-tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.06em;vertical-align:middle}.wz-tag.err,.wz-err{--c:var(--red);background:#fdecec;border:1px solid #f4c9c7}.wz-tech-name{font-size:13px;font-weight:600;line-height:1.25}.wz-tech-sub{font-size:11px}
+/*loader+error*/ @keyframes wz-spin{to{transform:rotate(360deg)}}.wz-loader{display:flex;align-items:center;justify-content:center;gap:10px;border-style:dashed;background:#fcfdfe;font-size:11px}.wz-loader .ring{flex:0 0 20px;width:20px;height:20px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--teal);animation:wz-spin .8s linear infinite}.wz-err{padding:8px 12px;font-size:11px;margin:4px 0}
+/*inputs*/ .widget-text input,.widget-dropdown>select{border:1px solid #d7dde5 !important;border-radius:8px !important;height:32px !important;padding:2px 10px !important;font-size:13px !important;color:var(--ink) !important;background:#fff !important;box-shadow:none !important}.widget-text input:focus,.widget-dropdown>select:focus{border-color:var(--teal) !important;outline:none !important;box-shadow:0 0 0 2px #0f9d8f22 !important}
+/*buttons*/ button.jupyter-button{border:1px solid #d7dde5 !important;border-radius:8px !important;box-shadow:none !important;font-family:sans-serif !important;font-size:13px !important}button.jupyter-button:hover{filter:brightness(.97)}.jupyter-button.wz-pill{border-radius:20px !important;font-weight:600 !important;height:36px !important}.jupyter-button.wz-primary{background:var(--teal) !important;border-color:var(--teal) !important;color:#fff !important}.jupyter-button.wz-ghost{background:#fff !important;color:var(--ink) !important}.jupyter-button.wz-chipbtn{height:30px !important;border-radius:7px !important;font-family:monospace !important}
+/*buttons2*/ .jupyter-button.wz-listitem,.jupyter-button.wz-pick{border-radius:9px !important;justify-content:flex-start !important;text-align:left !important}.jupyter-button.wz-pick,.jupyter-button.wz-addtech{background:#fff !important;border-radius:10px !important}.jupyter-button.wz-pick{border:1px solid var(--line) !important;color:var(--ink) !important}.jupyter-button.wz-addtech{border:1px dashed #cbd3dd !important;color:var(--muted) !important;font-size:12px !important}.jupyter-button.wz-pick:hover{border-color:var(--teal) !important;background:#f3faf9 !important}.jupyter-button.wz-addtech:hover{border-color:var(--teal) !important;color:var(--teal) !important}.jupyter-button.wz-x{background:transparent !important;border:none !important;color:var(--muted) !important;font-size:14px !important;border-radius:50% !important}.jupyter-button.wz-x:hover{background:#f2f4f7 !important;color:#e0524d !important}
+/*modal*/ .wz-modal{position:fixed !important;inset:0;background:rgba(17,25,36,.45);z-index:9999;align-items:center !important;justify-content:center !important}.wz-modal-card{background:#fff !important;border-radius:14px !important;padding:18px 20px !important;width:520px !important;max-height:74vh !important;overflow:auto !important;box-shadow:0 18px 50px rgba(0,0,0,.28) !important}.wz-modal-title{font-size:15px;font-weight:700;margin:0 0 2px}
 </style>
 """
 
@@ -177,14 +126,14 @@ def _error_box(msg, height, width=None):
 def _loading_html(label="Loading…", big=False):
     box = "width:420px;height:88px;gap:16px" if big else "width:260px;height:64px"
     ring = " style='width:32px;height:32px;border-width:3.5px;flex:0 0 32px'" if big else ""
-    txt = f" style='font-size:15px;font-weight:700;letter-spacing:.04em;color:{INK} !important'" if big else ""
+    txt = f" style='font-size:15px;font-weight:700;letter-spacing:.04em;--c:{INK}'" if big else ""
     return HTML(f"<div style='min-height:{CONTENT_MIN_PX}px;display:flex;align-items:center;justify-content:center'>"
                 f"<div class='wz-loader' style='border:none;background:transparent;{box}'>"
                 f"<div class='ring'{ring}></div><span{txt}>{label}</span></div></div>")
 
 
 def _kpi(label, value, sub, color):
-    return (f"<div class='wz-kpi'><div class='lab' style='color:{color} !important'>{label}</div>"
+    return (f"<div class='wz-kpi'><div class='lab' style='--c:{color}'>{label}</div>"
             f"<div class='val'>{value}</div><div class='sub'>{sub}</div></div>")
 
 
@@ -376,7 +325,7 @@ def _build_step_site(buildings):
                       _col("Climate zone", "zone", "Climate zone · solar irradiation"),
                       _col("Diversity factor", "diversity", "% reduction in aggregated peak")]),
         widgets.HBox([HTML("<div class='wz-label' style='margin:8px 10px 0 2px'>Energy class "
-                           "<span style='color:#8a94a0'>(EU EPC / SIA 380/1)</span></div>"),
+                           "<span style='--c:#8a94a0'>(EU EPC / SIA 380/1)</span></div>"),
                       widgets.HBox(epc_btns, layout=widgets.Layout(margin="4px 24px 0 0")),
                       HTML("<div class='wz-label' style='margin:8px 10px 0 0'>Construction period</div>"), F["period"]],
                      layout=widgets.Layout(align_items="center", margin="0 0 10px"))])
@@ -411,9 +360,9 @@ def _build_step_site(buildings):
         type_list.children = rows
         surface, peaks, *_ = _site_totals(buildings)
         totals_box.value = ("<div class='wz-side wz-tot' style='margin-top:8px'>"
-                            "<div style='font-size:10px;letter-spacing:.1em;color:#8a94a0'>AGGREGATE TOTALS</div>"
+                            "<div style='font-size:10px;letter-spacing:.1em;--c:#8a94a0'>AGGREGATE TOTALS</div>"
                             f"Surface <span>{surface:,.0f} m²</span><br>" +
-                            "<br>".join(f"{c} peak <span style='color:{col}'>{peaks[c]:,.0f} kW</span>" for c, col in CARRIERS)
+                            "<br>".join(f"{c} peak <span style='--c:{col}'>{peaks[c]:,.0f} kW</span>" for c, col in CARRIERS)
                             + "</div>")
 
     def _refresh_right():
@@ -448,7 +397,7 @@ def _build_step_site(buildings):
             cards += [_kpi(f"{c} peak", f"{peaks[c]:,.0f}", "kW · coincident", col),
                       _kpi(f"{c} annual", f"{annuals[c]:,.0f}", "MWh/y", col)]
         missing = sum(1 for b in buildings if b.get("_error"))
-        note = (f" <span style='text-transform:none;letter-spacing:0;color:#b3312c !important'>"
+        note = (f" <span style='text-transform:none;letter-spacing:0;--c:#b3312c'>"
                 f"· {missing} type(s) missing</span>") if missing else ""
         agg_kpis.value = (f"<div class='wz-band'><h4>Σ Aggregated totals — all {len(buildings)} building types{note}</h4>"
                           f"<div class='wz-row'>{''.join(cards[:6])}</div></div>")   # the band stops at the DHW peak
@@ -534,7 +483,7 @@ def _build_step_variants(variants):
     def _open_modal(vi, _b=None):
         var, color = variants[vi], _vcolor(vi)
         modal_title.value = (f"<div class='wz-modal-title'>Add technology</div><div class='wz-caption'>to "
-                             f"<b style='color:{color} !important'>V{vi + 1}</b> · {var['name']}</div>")
+                             f"<b style='color:{color}'>V{vi + 1}</b> · {var['name']}</div>")
         blocks = []
         for cat, techs in TECH_CATALOG.items():
             available = [t for t in techs if t[0] not in var["techs"]]
@@ -633,20 +582,20 @@ def _summary_html(buildings, variants):
     rows = []
     for i, b in enumerate(buildings):
         pk, err = _dv(b, "peak"), b.get("_error")
-        demand = (f"<span style='color:#b3312c !important'>no demand data — {err}</span>" if err else
+        demand = (f"<span style='--c:#b3312c'>no demand data — {err}</span>" if err else
                   " · ".join(f"{c if c == 'DHW' else c.lower()} {pk[c]:,.0f} kW" for c, _ in CARRIERS))
         tag = " <span class='wz-tag err'>FAILED</span>" if err else ""
         rows.append(f"<tr><td class='k'>#{i + 1}  {b['name']}</td><td class='v'>{b['use']} · {b['period']} · "
-                    f"renovated: {b['renovated']}{tag}<br><span style='font-weight:400;color:#6b7280'>{b['gfa']:,.0f} m² · "
+                    f"renovated: {b['renovated']}{tag}<br><span style='font-weight:400;--c:#6b7280'>{b['gfa']:,.0f} m² · "
                     f"{b['zone']} · diversity {b['diversity']:.0f}% · class "
-                    f"<b style='color:{EPC_COLOR[b['epc']]} !important'>{b['epc']}</b><br>{demand}</span></td></tr>")
+                    f"<b style='color:{EPC_COLOR[b['epc']]}'>{b['epc']}</b><br>{demand}</span></td></tr>")
     missing = [b["name"] for b in buildings if b.get("_error")]
-    warn = (f"<tr><td class='k'>Incomplete</td><td class='v' style='color:#b3312c !important'>"
+    warn = (f"<tr><td class='k'>Incomplete</td><td class='v' style='--c:#b3312c'>"
             f"{', '.join(missing)} excluded — demand fetch failed</td></tr>") if missing else ""
     vrows = []
     for vi, var in enumerate(variants):
         color = _vcolor(vi)
-        chips = "".join(f"<span class='wz-chip' style='background:{color}1a;color:{color} !important'>{t}</span>"
+        chips = "".join(f"<span class='wz-chip' style='background:{color}1a;--c:{color}'>{t}</span>"
                         for t in var["techs"]) or "<i style='color:#8a94a0'>no technology selected</i>"
         vrows.append(f"<tr><td class='k'><b style='color:{color}'>V{vi + 1}</b> {var['name']}</td><td class='v'>{chips}</td></tr>")
     return ("<div class='wz-title'>Summary</div>"
