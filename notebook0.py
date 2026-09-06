@@ -733,16 +733,16 @@ APP_TO_DB = {                 # app label -> Sympheny database technology name
     "CHP unit": "Gas CHP (Linearized cost)",
 }
 
-_HEADERS, SYMPHENY_BASE_URL, BE_URL, LOGGED_USERNAME = {}, None, None, ""
+_HEADERS, BASE_URL, LOGGED_USERNAME = {}, None, ""
 _DEMAND_CACHE, _SOLAR_CACHE = {}, {}
 
 
 def _authenticate():
     """Read the kernel token once and build the auth header for every call."""
-    global _HEADERS, SYMPHENY_BASE_URL, BE_URL, LOGGED_USERNAME
+    global _HEADERS, BASE_URL, LOGGED_USERNAME
     creds = get_creds_from_token(get_token())
-    _HEADERS, SYMPHENY_BASE_URL, BE_URL = creds["h"], creds["base_url"], creds["be"]
-    utils_log.log(SYMPHENY_BASE_URL)
+    _HEADERS, BASE_URL = creds["h"], creds["base_url"]
+    utils_log.log(BASE_URL)
 
     # get logged username
     h = creds["h"]
@@ -779,42 +779,42 @@ def _get_or_create(url, name_key, guid_key, name, body, pick=None):
 
 
 def _project(name=PROJECT_NAME):
-    return _get_or_create(f"{BE_URL}projects", "projectName", "projectGuid", name,
+    return _get_or_create(f"{BASE_URL}sympheny-app/projects", "projectName", "projectGuid", name,
                           {"projectName": name, "version": "V2"}, pick=lambda d: d["projects"])
 
 
 def _analysis(project_guid, name):
-    return _get_or_create(f"{BE_URL}projects/{project_guid}/analyses", "analysisName", "analysisGuid", name,
+    return _get_or_create(f"{BASE_URL}sympheny-app/projects/{project_guid}/analyses", "analysisName", "analysisGuid", name,
                           {"analysisName": name})
 
 
 def _hub(scenario_guid, name=HUB_NAME):
-    return _get_or_create(f"{BE_URL}scenarios/{scenario_guid}/hubs", "hubName", "hubGuid", name, {"hubName": name})
+    return _get_or_create(f"{BASE_URL}sympheny-app/scenarios/{scenario_guid}/hubs", "hubName", "hubGuid", name, {"hubName": name})
 
 
 def _stage(scenario_guid, name=STAGE_NAME):
-    return _get_or_create(f"{BE_URL}scenarios/{scenario_guid}/stages", "name", "guid", name,
+    return _get_or_create(f"{BASE_URL}sympheny-app/scenarios/{scenario_guid}/stages", "name", "guid", name,
                           lambda items: {"name": name, "index": len(items) + 1, "length": 1})
 
 
 def _reset_analysis(project_guid, name):
     """Delete any analysis of this name, then create a fresh one (the project, and its GIS analysis, survive)."""
-    for a in _d("get", f"{BE_URL}projects/{project_guid}/analyses") or []:
+    for a in _d("get", f"{BASE_URL}sympheny-app/projects/{project_guid}/analyses") or []:
         if a.get("analysisName") == name:
-            _raw("delete", f"{BE_URL}analysis/{a['analysisGuid']}")
-    return _d("post", f"{BE_URL}projects/{project_guid}/analyses", json={"analysisName": name})["analysisGuid"]
+            _raw("delete", f"{BASE_URL}sympheny-app/analysis/{a['analysisGuid']}")
+    return _d("post", f"{BASE_URL}sympheny-app/projects/{project_guid}/analyses", json={"analysisName": name})["analysisGuid"]
 
 
 def _reset_scenario(analysis_guid, name):
     """Delete any scenario of this name, then create a fresh one — it has no hubs yet."""
-    for s in _d("get", f"{BE_URL}analysis/{analysis_guid}")["scenarios"]:
+    for s in _d("get", f"{BASE_URL}sympheny-app/analysis/{analysis_guid}")["scenarios"]:
         if s.get("scenarioName") == name:
-            _raw("delete", f"{BE_URL}scenario/{s['scenarioGuid']}")
+            _raw("delete", f"{BASE_URL}sympheny-app/scenario/{s['scenarioGuid']}")
     return _create_scenario(analysis_guid, name)
 
 
 def _create_scenario(analysis_guid, name):
-    return _d("post", f"{BE_URL}analysis/{analysis_guid}/scenario", json={"scenarioName": name})["scenarioGuid"]
+    return _d("post", f"{BASE_URL}sympheny-app/analysis/{analysis_guid}/scenario", json={"scenarioName": name})["scenarioGuid"]
 
 
 # ------------------------------------------------- step 2: demand retrieval
@@ -827,10 +827,10 @@ def _fetch_carrier(building_type, area, carrier):
     if key in _DEMAND_CACHE:
         return _DEMAND_CACHE[key]
     demand_type = CARRIER_DEMAND_TYPE[carrier]
-    meta = _raw("post", f"{SYMPHENY_BASE_URL}api-services/demand/hub_demand?demand_type={demand_type}&building_type={building_type}",
+    meta = _raw("post", f"{BASE_URL}api-services/demand/hub_demand?demand_type={demand_type}&building_type={building_type}",
                 json=[{"construction_end": CONSTRUCTION_END, "building_ground_area": float(area), "nbr_floor": NBR_FLOOR}]).json()[0]
     guid, total = meta["energyDemandMetadataGuid"], meta["totalAnnualDemand"]
-    data = _d("get", f"{BE_URL}database-energy-demands/{guid}/profile")
+    data = _d("get", f"{BASE_URL}sympheny-app/database-energy-demands/{guid}/profile")
     if len(data) != 8760:
         raise ValueError(f"{demand_type}: expected 8760 periods, got {len(data)}")
     # Each entry is a normalised share of the annual total; period order isn't guaranteed.
@@ -909,13 +909,13 @@ def _load_site_gis(out, polygon_lonlat):
     hub_guid = _hub(scenario_guid)
     out.print(f"  · scenario: {scenario_guid}  ·  hub: {hub_guid}")
 
-    job_id = _raw("post", f"{SYMPHENY_BASE_URL}api-services/gis/background/scenarios/{scenario_guid}/hubs/{hub_guid}?geoadmin=true",
+    job_id = _raw("post", f"{BASE_URL}api-services/gis/background/scenarios/{scenario_guid}/hubs/{hub_guid}?geoadmin=true",
                   json={"hub_name": HUB_NAME, "feature": {"type": "Feature", "geometry": {
                       "type": "Polygon", "coordinates": [_closed(polygon_lonlat)]}}}).json()["job_id"]
     out.print(f"  · background job {job_id} started")
     for i in range(1, GIS_JOB_MAX_ATTEMPTS + 1):
         try:
-            jobs = _raw("get", f"{SYMPHENY_BASE_URL}api-services/gis/background").json()
+            jobs = _raw("get", f"{BASE_URL}api-services/gis/background").json()
             if any(x.get("job_id") == job_id and x.get("is_done") for x in jobs):
                 break
         except Exception:
@@ -927,7 +927,7 @@ def _load_site_gis(out, polygon_lonlat):
         raise TimeoutError(f"GIS job {job_id} did not complete within {GIS_JOB_MAX_ATTEMPTS} seconds")
 
     out.print("  · job complete — fetching GIS data…")
-    data = _raw("get", f"{SYMPHENY_BASE_URL}api-services/gis/scenarios/{scenario_guid}/hubs/{hub_guid}").json()
+    data = _raw("get", f"{BASE_URL}api-services/gis/scenarios/{scenario_guid}/hubs/{hub_guid}").json()
     out.print(f"✓ {len((data.get('building_layer') or {}).get('features', []))} building(s), "
               f"{len(data.get('addresses') or [])} address(es) loaded.")
     return data, scenario_guid
@@ -965,7 +965,7 @@ def _fetch_solar_profile(lon, lat, area):
     """8760 h solar profile [kW] for one point + surface area."""
     key = (round(lon, 5), round(lat, 5), round(area, 1))
     if key not in _SOLAR_CACHE:
-        series = _raw("post", f"{SYMPHENY_BASE_URL}api-services/jrc/solar/profile", json=[{"lon": lon, "lat": lat, "area": area}]).json()
+        series = _raw("post", f"{BASE_URL}api-services/jrc/solar/profile", json=[{"lon": lon, "lat": lat, "area": area}]).json()
         if len(series) != 8760:
             raise ValueError(f"solar profile: expected 8760 periods, got {len(series)}")
         _SOLAR_CACHE[key] = series
@@ -977,7 +977,7 @@ def _carriers_by_subtype(scenario_guid):
     """subtypeKey -> energyCarrierGuid for everything already in the scenario. Imported
     technologies name theirs "HEAT_4@tp=25447" — the subtype is the part before "@". First wins."""
     found = {}
-    for c in (_d("get", f"{BE_URL}scenarios/{scenario_guid}/carriers") or {}).get("energyCarriers", []) or []:
+    for c in (_d("get", f"{BASE_URL}sympheny-app/scenarios/{scenario_guid}/carriers") or {}).get("energyCarriers", []) or []:
         key = (c.get("subtypeKey") or "").upper().split("@")[0].strip()
         if key:
             found.setdefault(key, c["energyCarrierGuid"])
@@ -986,7 +986,7 @@ def _carriers_by_subtype(scenario_guid):
 
 def _upload_profile(scenario_guid, name, series):
     """The endpoint wants exactly 8760 entries, periods 1..8760, positive."""
-    return _d("post", f"{BE_URL}scenarios/{scenario_guid}/profiles-json",
+    return _d("post", f"{BASE_URL}sympheny-app/scenarios/{scenario_guid}/profiles-json",
               json={"name": name, "values": [{"period": i + 1, "demandValue": round(max(0.0, v), 6)}
                                              for i, v in enumerate(series)]})["id"]
 
@@ -999,7 +999,7 @@ def _populate_scenario(out, scenario_guid, agg, var, guid_of, solar_series, sola
     for t in var["techs"]:
         guid = guid_of.get(APP_TO_DB.get(t, ""))
         guids.append(guid) if guid else unmapped.append(t)
-    status = _req("post", f"{BE_URL}scenarios/{scenario_guid}/hubs/{hub_guid}/import-database-technology-package?technologiesOptional=true",
+    status = _req("post", f"{BASE_URL}sympheny-app/scenarios/{scenario_guid}/hubs/{hub_guid}/import-database-technology-package?technologiesOptional=true",
                   json={"conversionTechGuids": guids}).status_code if guids else None
     out.print(f"    – technologies: {len(guids)} imported" + (f" (HTTP {status})" if status is not None else " — nothing to import"))
     if unmapped:
@@ -1018,7 +1018,7 @@ def _populate_scenario(out, scenario_guid, agg, var, guid_of, solar_series, sola
         else:
             # `area` is an "Area"-type available resource: the same m² the JRC profile was fetched for.
             pid = _upload_profile(scenario_guid, "Solar irradiance – site total", solar_series)
-            guid = _d("post", f"{BE_URL}v2_1/scenarios/{scenario_guid}/solar-on-site-resource",
+            guid = _d("post", f"{BASE_URL}sympheny-app/v2_1/scenarios/{scenario_guid}/solar-on-site-resource",
                       json={"name": "Solar irradiance – site total", "energyCarrierGuid": resource_guid,
                             "hubs": [{"hubGuid": hub_guid, "availableSolarCollectorArea": solar_area or 0.0,
                                       "availableResourceType": "Area"}],
@@ -1034,12 +1034,12 @@ def _populate_scenario(out, scenario_guid, agg, var, guid_of, solar_series, sola
         subtype = CARRIER_SUBTYPE[carrier]
         carrier_guid, origin = existing.get(subtype), f"reused {subtype}"
         if not carrier_guid:
-            carrier_guid = _d("post", f"{BE_URL}v2/scenarios/{scenario_guid}/carriers",
+            carrier_guid = _d("post", f"{BASE_URL}sympheny-app/v2/scenarios/{scenario_guid}/carriers",
                               json={"energyCarrierName": CARRIER_FULL_NAME[carrier], "subType": subtype,
                                     "colorHexCode": CARRIER_COLOR[carrier]})["energyCarrierGuid"]
             existing[subtype], origin = carrier_guid, f"created {subtype}"
         pid = _upload_profile(scenario_guid, f"{CARRIER_FULL_NAME[carrier]} – site total", series)
-        _d("post", f"{BE_URL}v2_1/scenarios/{scenario_guid}/energy-demands",
+        _d("post", f"{BASE_URL}sympheny-app/v2_1/scenarios/{scenario_guid}/energy-demands",
            json={"name": f"{CARRIER_FULL_NAME[carrier]} demand", "hubGuids": [hub_guid], "energyCarrierGuid": carrier_guid,
                  "demandProfileId": pid, "demandScalingFactor": 1, "stages": [stage_guid]})
         out.print(f"    – {carrier} ({origin}): {sum(series) / 1000:,.0f} MWh/y · peak {max(series):,.0f} kW · profile #{pid}")
@@ -1052,7 +1052,7 @@ def _create_variant_scenario(out, analysis_guid, var, agg, guid_of, gis_scenario
     _populate_scenario(out, scenario_guid, agg, var, guid_of, solar_series, solar_area)
     if gis_scenario_guid:
         try:
-            _raw("put", f"{BE_URL}scenarios/copy/{gis_scenario_guid}/gis", params={"scenarioGuidTo": scenario_guid})
+            _raw("put", f"{BASE_URL}sympheny-app/scenarios/copy/{gis_scenario_guid}/gis", params={"scenarioGuidTo": scenario_guid})
             out.print(f"    – GIS data copied from site scenario {gis_scenario_guid}")
         except Exception as exc:
             out.print(f"    ⚠ GIS copy failed: {type(exc).__name__}: {exc}")
@@ -1066,30 +1066,30 @@ def _create_variant_scenario(out, analysis_guid, var, agg, guid_of, gis_scenario
     if elec_guid:
         hub_guid, stage_guid = _hub(scenario_guid), _stage(scenario_guid)
         for kind, price in IMPEX_ELEC_PRICE.items():
-            _d("post", f"{BE_URL}v2_1/scenario/{scenario_guid}/impex",
+            _d("post", f"{BASE_URL}sympheny-app/v2_1/scenario/{scenario_guid}/impex",
                json={"name": f"Electricity {kind.lower()}", "energyCarrierGuid": elec_guid, "type": kind,
                      "hubs": [{"hubGuid": hub_guid}], "energyPriceCHFkWh": price, "stages": [stage_guid]})
         out.print(f"    – electricity import @ {IMPEX_ELEC_PRICE['IMPORT']:,.0f} · export @ {IMPEX_ELEC_PRICE['EXPORT']:,.0f} CHF/kWh")
     else:
         out.print(f"    – no {subtype} carrier, skipping import/export")
 
-    # Everything is in place — close the diagram last. This endpoint lives under SYMPHENY_BASE_URL, not BE_URL.
-    resp = _req("put", f"{SYMPHENY_BASE_URL}sympheny-app/scenarios/{scenario_guid}/close-diagram", data=None)
+    # Everything is in place — close the diagram last.
+    resp = _req("put", f"{BASE_URL}sympheny-app/scenarios/{scenario_guid}/close-diagram", data=None)
     if resp.status_code != 200:
         raise RuntimeError(f"close-diagram returned HTTP {resp.status_code}")
     out.print("    – diagram closed")
-    return scenario_guid, _d("get", f"{BE_URL}scenario/{scenario_guid}/frontend-url")["frontendUrl"]
+    return scenario_guid, _d("get", f"{BASE_URL}sympheny-app/scenario/{scenario_guid}/frontend-url")["frontendUrl"]
 
 
 def _solve(out, analysis_guid, scenario_guid, scenario_name):
     """Queue an optimisation, wait for it, and return the dashboard URL."""
-    resp = _req("post", f"{SYMPHENY_BASE_URL}sense-api/ext/solver/jobs",
+    resp = _req("post", f"{BASE_URL}sense-api/ext/solver/jobs",
                 json=[dict(SOLVER, objective1=SOLVER_OBJECTIVE, scenarioGuid=scenario_guid, scenarioName=scenario_name)])
     if resp.status_code != 200:
         raise RuntimeError(f"solver job returned HTTP {resp.status_code}")
     job_id = None
     for i in range(max(1, SOLVER_WAIT_SECONDS // SOLVER_POLL_SECONDS)):
-        jobs = [j for j in _raw("post", f"{SYMPHENY_BASE_URL}sense-api/ext/solver/jobs/get-scenarios",
+        jobs = [j for j in _raw("post", f"{BASE_URL}sense-api/ext/solver/jobs/get-scenarios",
                                 json={"scenarioGuids": [scenario_guid], "limit": SOLVER_WAIT_SECONDS}).json()
                 if j["scenarioGuid"] == scenario_guid]
         if jobs and all(j["terminated"] for j in jobs):
@@ -1099,8 +1099,8 @@ def _solve(out, analysis_guid, scenario_guid, scenario_name):
         time.sleep(SOLVER_POLL_SECONDS)
     if job_id is None:
         raise TimeoutError(f"solver job did not finish within {SOLVER_WAIT_SECONDS}s")
-    domain = "app.dev.sympheny.com" if "dev" in BE_URL else "app.sympheny.com"
-    project_guid = _d("get", f"{BE_URL}analysis/{analysis_guid}")["projectGuid"]
+    domain = "app.dev.sympheny.com" if "dev" in BASE_URL else "app.sympheny.com"
+    project_guid = _d("get", f"{BASE_URL}sympheny-app/analysis/{analysis_guid}")["projectGuid"]
     return f"https://{domain}/projects/{project_guid}/analysis/{analysis_guid}/execution/{job_id}/solution/1"
 
 
@@ -1115,7 +1115,7 @@ def _work_submit(out, buildings, variants, site):
         return out.print("✗ no demand data at all — go back to step 2 and fix the errors.")
     try:
         guid_of = {it["technologyName"]: it["conversionTechGuid"]
-                   for it in _d("get", f"{BE_URL}conversion-technologies/profile-types/database")}
+                   for it in _d("get", f"{BASE_URL}sympheny-app/conversion-technologies/profile-types/database")}
         out.print(f"  · database technologies: {len(guid_of)}")
         # Reuse the project (the step-1 GIS scenario lives in it); only the variants' own analysis is reset.
         project_guid = _project()
